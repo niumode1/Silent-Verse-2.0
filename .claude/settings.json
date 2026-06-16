@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(where godot *)",
+      "Bash(python3 -c ' *)",
+      "Bash(node -e ' *)",
+      "Bash(sed -i '127s/^\\\\t\\\\t\\\\t/\\\\t\\\\t/' \"e:/Silent Verse 2.0/scripts/shared/physics/material_database.gd\")",
+      "Bash(sed -i '128s/^\\\\t\\\\t\\\\t/\\\\t\\\\t/' \"e:/Silent Verse 2.0/scripts/shared/physics/material_database.gd\")",
+      "Bash(sed -i '129s/^\\\\t\\\\t\\\\t/\\\\t\\\\t\\\\t/' \"e:/Silent Verse 2.0/scripts/shared/physics/material_database.gd\")",
+      "Bash(mkdir -p \"e:/Silent Verse 2.0/scripts/client/network\" && mv \"e:/Silent Verse 2.0/scripts/client/network/enet_client.gd\" /dev/null 2>/dev/null; ls \"e:/Silent Verse 2.0/scripts/client/network/\" 2>/dev/null || echo \"already in scripts/client/\")",
+      "Bash(sed -i 's/var player := _player_data.get\\(peer_id\\)/var player: Dictionary = _player_data.get\\(peer_id\\)/g' scripts/server/authority.gd)",
+      "Bash(sed -i 's/var equipped := player.get\\(\"equipped\", {}\\)/var equipped: Dictionary = player.get\\(\"equipped\", {}\\)/g' scripts/server/authority.gd)",
+      "Bash(sed -i 's/var now := Time.get_unix_time_from_system\\(\\)/var now: float = Time.get_unix_time_from_system\\(\\)/g' scripts/client/input_handler.gd)",
+      "Bash(sed -i 's/var mouse_delta := event.relative/var mouse_delta: Vector2 = event.relative/g' scripts/client/input_handler.gd)",
+      "Bash(sed -i 's/var pos_data := payload.get\\(\"position\", {}\\)/var pos_data: Dictionary = payload.get\\(\"position\", {}\\)/g' scripts/client/network/enet_client.gd)",
+      "Bash(sed -i 's/var pos := Vector3\\(pos_data.get\\(\"x\", 0\\), pos_data.get\\(\"y\", 0\\), pos_data.get\\(\"z\", 0\\)\\)/var pos: Vector3 = Vector3\\(pos_data.get\\(\"x\", 0\\), pos_data.get\\(\"y\", 0\\), pos_data.get\\(\"z\", 0\\)\\)/g' scripts/client/network/enet_client.gd)",
+      "Bash(sed -i 's/var decoded := NetworkPacket.decode\\(json_str\\)/var decoded: Dictionary = NetworkPacket.decode\\(json_str\\)/g' scripts/client/network/enet_client.gd)",
+      "Bash(sed -i 's/var json_str := packet.get_string_from_utf8\\(\\)/var json_str: String = packet.get_string_from_utf8\\(\\)/g' scripts/client/network/enet_client.gd)",
+      "Bash(sed -i 's/var packet := _enet.get_packet\\(\\)/var packet: PackedByteArray = _enet.get_packet\\(\\)/g' scripts/client/network/enet_client.gd)",
+      "Bash(taskkill /F /IM Godot_v4.6.3-stable_win64.exe)",
+      "Bash(printf 'multiplayer.peer_disconnected.connect\\(_on_peer_disconnected\\)\\\\nmultiplayer.peer_packet.connect\\(_on_peer_packet\\)')",
+      "Bash(sed -i '/multiplayer.peer_disconnected.connect/r /tmp/new_signal.txt' scripts/server/network/enet_server.gd)",
+      "Bash(sed -i '/multiplayer.peer_disconnected.connect\\(_on_peer_disconnected\\)/d' scripts/server/network/enet_server.gd)",
+      "Bash(sed -i '/^multiplayer.peer_disconnected.connect\\(_on_peer_disconnected\\)/d' scripts/server/network/enet_server.gd)",
+      "Bash(git remote *)",
+      "Bash(git log *)",
+      "Bash(git commit -m 'Phase 1 完成：物理引擎 + 网络层 + 联机验证 *)"
+    ],
+    "additionalDirectories": [
+      "\\dev"
+    ]
+  }
+}

@@ -1,0 +1,463 @@
+{
+  "reactions": [
+    {
+      "id": "burn_wood",
+      "type": "combustion",
+      "name": "木材燃烧",
+      "inputs": [
+        {"material_category": "wood", "mass_ratio": 0.45},
+        {"material": "oxygen", "mass_ratio": 0.55, "source": "atmosphere"}
+      ],
+      "temperature_min": 300,
+      "temperature_optimal": 600,
+      "energy_output_mj_per_kg_input": 15,
+      "atmosphere_required": "oxygen",
+      "outputs": [
+        {"material": "wood_ash", "mass_ratio": 0.02, "phase": "solid"},
+        {"material": "co2", "mass_ratio": 0.78, "phase": "gas"},
+        {"material": "h2o", "mass_ratio": 0.20, "phase": "gas"}
+      ],
+      "incomplete_combustion": {
+        "condition": "oxygen_depleted",
+        "outputs": [
+          {"material": "wood_ash", "mass_ratio": 0.03, "phase": "solid"},
+          {"material": "co", "mass_ratio": 0.30, "phase": "gas", "hazardous": true},
+          {"material": "co2", "mass_ratio": 0.47, "phase": "gas"},
+          {"material": "h2o", "mass_ratio": 0.20, "phase": "gas"}
+        ]
+      }
+    },
+    {
+      "id": "burn_charcoal",
+      "type": "combustion",
+      "name": "木炭燃烧",
+      "inputs": [
+        {"material": "charcoal", "mass_ratio": 0.40},
+        {"material": "oxygen", "mass_ratio": 0.60, "source": "atmosphere"}
+      ],
+      "temperature_min": 350,
+      "temperature_optimal": 800,
+      "energy_output_mj_per_kg_input": 30,
+      "atmosphere_required": "oxygen",
+      "outputs": [
+        {"material": "wood_ash", "mass_ratio": 0.03, "phase": "solid"},
+        {"material": "co2", "mass_ratio": 0.97, "phase": "gas"}
+      ],
+      "incomplete_combustion": {
+        "condition": "oxygen_depleted",
+        "outputs": [
+          {"material": "wood_ash", "mass_ratio": 0.03, "phase": "solid"},
+          {"material": "co", "mass_ratio": 0.40, "phase": "gas", "hazardous": true},
+          {"material": "co2", "mass_ratio": 0.57, "phase": "gas"}
+        ]
+      }
+    },
+    {
+      "id": "burn_coal",
+      "type": "combustion",
+      "name": "煤炭燃烧",
+      "inputs": [
+        {"material": "coal", "mass_ratio": 0.35},
+        {"material": "oxygen", "mass_ratio": 0.65, "source": "atmosphere"}
+      ],
+      "temperature_min": 400,
+      "temperature_optimal": 900,
+      "energy_output_mj_per_kg_input": 24,
+      "atmosphere_required": "oxygen",
+      "outputs": [
+        {"material": "wood_ash", "mass_ratio": 0.05, "phase": "solid"},
+        {"material": "co2", "mass_ratio": 0.90, "phase": "gas"},
+        {"material": "so2", "mass_ratio": 0.05, "phase": "gas"}
+      ]
+    },
+    {
+      "id": "smelt_iron_hematite",
+      "type": "carbothermal_reduction",
+      "name": "赤铁矿冶炼铁",
+      "inputs": [
+        {"material": "iron_ore_hematite", "mass_ratio": 0.55},
+        {"material": "charcoal", "mass_ratio": 0.20},
+        {"material": "limestone", "mass_ratio": 0.10, "optional": true, "purpose": "flux"}
+      ],
+      "temperature_min": 1200,
+      "temperature_optimal": 1400,
+      "duration_per_kg_seconds": 1800,
+      "atmosphere_required": "reducing",
+      "outputs": [
+        {"material": "pure_iron", "mass_ratio": 0.38, "purity_range": [0.85, 0.95], "phase": "solid"},
+        {"material": "slag", "mass_ratio": 0.32, "phase": "solid"},
+        {"material": "co2", "mass_ratio": 0.18, "phase": "gas"},
+        {"material": "co", "mass_ratio": 0.07, "phase": "gas", "hazardous": true}
+      ]
+    },
+    {
+      "id": "smelt_iron_magnetite",
+      "type": "carbothermal_reduction",
+      "name": "磁铁矿冶炼铁",
+      "inputs": [
+        {"material": "iron_ore_magnetite", "mass_ratio": 0.53},
+        {"material": "charcoal", "mass_ratio": 0.19},
+        {"material": "limestone", "mass_ratio": 0.08, "optional": true, "purpose": "flux"}
+      ],
+      "temperature_min": 1250,
+      "temperature_optimal": 1450,
+      "duration_per_kg_seconds": 1800,
+      "atmosphere_required": "reducing",
+      "outputs": [
+        {"material": "pure_iron", "mass_ratio": 0.40, "purity_range": [0.88, 0.96], "phase": "solid"},
+        {"material": "slag", "mass_ratio": 0.28, "phase": "solid"},
+        {"material": "co2", "mass_ratio": 0.18, "phase": "gas"},
+        {"material": "co", "mass_ratio": 0.07, "phase": "gas", "hazardous": true}
+      ]
+    },
+    {
+      "id": "smelt_copper_malachite",
+      "type": "carbothermal_reduction",
+      "name": "孔雀石冶炼铜",
+      "inputs": [
+        {"material": "copper_ore_malachite", "mass_ratio": 0.60},
+        {"material": "charcoal", "mass_ratio": 0.15}
+      ],
+      "temperature_min": 800,
+      "temperature_optimal": 1100,
+      "duration_per_kg_seconds": 1200,
+      "atmosphere_required": "reducing",
+      "outputs": [
+        {"material": "pure_copper", "mass_ratio": 0.35, "purity_range": [0.80, 0.92], "phase": "solid"},
+        {"material": "slag", "mass_ratio": 0.25, "phase": "solid"},
+        {"material": "co2", "mass_ratio": 0.30, "phase": "gas"},
+        {"material": "h2o", "mass_ratio": 0.10, "phase": "gas"}
+      ]
+    },
+    {
+      "id": "smelt_tin_cassiterite",
+      "type": "carbothermal_reduction",
+      "name": "锡石冶炼锡",
+      "inputs": [
+        {"material": "tin_ore_cassiterite", "mass_ratio": 0.65},
+        {"material": "charcoal", "mass_ratio": 0.12}
+      ],
+      "temperature_min": 700,
+      "temperature_optimal": 1000,
+      "duration_per_kg_seconds": 900,
+      "atmosphere_required": "reducing",
+      "outputs": [
+        {"material": "pure_tin", "mass_ratio": 0.51, "purity_range": [0.85, 0.95], "phase": "solid"},
+        {"material": "slag", "mass_ratio": 0.15, "phase": "solid"},
+        {"material": "co2", "mass_ratio": 0.24, "phase": "gas"}
+      ]
+    },
+    {
+      "id": "make_bronze",
+      "type": "alloying",
+      "name": "炼制青铜 (Cu+Sn)",
+      "inputs": [
+        {"material": "pure_copper", "mass_ratio": 0.88},
+        {"material": "pure_tin", "mass_ratio": 0.12}
+      ],
+      "temperature_min": 950,
+      "temperature_optimal": 1100,
+      "duration_per_kg_seconds": 600,
+      "atmosphere_required": "reducing",
+      "outputs": [
+        {"material": "bronze", "mass_ratio": 0.95, "phase": "solid"}
+      ]
+    },
+    {
+      "id": "calcinate_limestone",
+      "type": "thermal_decomposition",
+      "name": "煅烧石灰岩制生石灰",
+      "inputs": [
+        {"material": "limestone", "mass_ratio": 1.0}
+      ],
+      "temperature_min": 825,
+      "temperature_optimal": 1000,
+      "duration_per_kg_seconds": 3600,
+      "atmosphere_required": "any",
+      "outputs": [
+        {"material": "quicklime", "mass_ratio": 0.56, "phase": "solid"},
+        {"material": "co2", "mass_ratio": 0.44, "phase": "gas"}
+      ]
+    },
+    {
+      "id": "slake_lime",
+      "type": "dissolution",
+      "name": "生石灰熟化",
+      "inputs": [
+        {"material": "quicklime", "mass_ratio": 0.60},
+        {"material": "water", "mass_ratio": 0.40}
+      ],
+      "temperature_min": 0,
+      "temperature_optimal": 25,
+      "duration_per_kg_seconds": 300,
+      "atmosphere_required": "any",
+      "is_exothermic": true,
+      "exothermic_heat_kj_per_kg": 1155,
+      "outputs": [
+        {"material": "slaked_lime", "mass_ratio": 1.0, "phase": "solid"}
+      ]
+    },
+    {
+      "id": "carbonation_lime",
+      "type": "dissolution",
+      "name": "熟石灰硬化",
+      "inputs": [
+        {"material": "slaked_lime", "mass_ratio": 0.80},
+        {"material": "co2", "mass_ratio": 0.20, "source": "atmosphere"}
+      ],
+      "temperature_min": 0,
+      "temperature_optimal": 25,
+      "duration_per_kg_seconds": 86400,
+      "atmosphere_required": "any",
+      "outputs": [
+        {"material": "limestone", "mass_ratio": 1.0, "phase": "solid"}
+      ]
+    },
+    {
+      "id": "dissolve_wood_ash",
+      "type": "dissolution",
+      "name": "草木灰溶水制碱水",
+      "inputs": [
+        {"material": "wood_ash", "mass_ratio": 0.30},
+        {"material": "water", "mass_ratio": 0.70}
+      ],
+      "temperature_min": 0,
+      "temperature_optimal": 40,
+      "duration_per_kg_seconds": 600,
+      "atmosphere_required": "any",
+      "outputs": [
+        {"material": "potash_solution", "mass_ratio": 1.0, "phase": "liquid"}
+      ]
+    },
+    {
+      "id": "make_soap",
+      "type": "dissolution",
+      "name": "制肥皂",
+      "inputs": [
+        {"material": "fat_animal", "mass_ratio": 0.50},
+        {"material": "potash_solution", "mass_ratio": 0.50}
+      ],
+      "temperature_min": 60,
+      "temperature_optimal": 90,
+      "duration_per_kg_seconds": 3600,
+      "atmosphere_required": "any",
+      "outputs": [
+        {"material": "soap", "mass_ratio": 0.80, "phase": "solid"},
+        {"material": "glycerol", "mass_ratio": 0.20, "phase": "liquid"}
+      ]
+    },
+    {
+      "id": "ferment_grain_to_alcohol",
+      "type": "fermentation",
+      "name": "谷物发酵成酒",
+      "inputs": [
+        {"material": "wheat_grain", "mass_ratio": 0.60},
+        {"material": "water", "mass_ratio": 0.40}
+      ],
+      "temperature_min": 15,
+      "temperature_optimal": 25,
+      "duration_per_kg_seconds": 172800,
+      "atmosphere_required": "anaerobic",
+      "outputs": [
+        {"material": "alcohol_solution", "mass_ratio": 0.85, "phase": "liquid"},
+        {"material": "co2", "mass_ratio": 0.10, "phase": "gas"},
+        {"material": "grain_sludge", "mass_ratio": 0.05, "phase": "solid"}
+      ]
+    },
+    {
+      "id": "ferment_alcohol_to_vinegar",
+      "type": "fermentation",
+      "name": "酒变醋",
+      "inputs": [
+        {"material": "alcohol_solution", "mass_ratio": 1.0}
+      ],
+      "temperature_min": 20,
+      "temperature_optimal": 30,
+      "duration_per_kg_seconds": 259200,
+      "atmosphere_required": "aerobic",
+      "outputs": [
+        {"material": "vinegar", "mass_ratio": 0.98, "phase": "liquid"}
+      ]
+    },
+    {
+      "id": "spoil_meat",
+      "type": "fermentation",
+      "name": "肉类腐败",
+      "inputs": [
+        {"material": "meat_raw", "mass_ratio": 1.0}
+      ],
+      "temperature_min": 5,
+      "temperature_optimal": 30,
+      "duration_per_kg_seconds": 172800,
+      "atmosphere_required": "any",
+      "outputs": [
+        {"material": "spoiled_meat", "mass_ratio": 0.70, "phase": "solid"},
+        {"material": "h2o", "mass_ratio": 0.20, "phase": "liquid"},
+        {"material": "methane", "mass_ratio": 0.05, "phase": "gas"},
+        {"material": "co2", "mass_ratio": 0.05, "phase": "gas"}
+      ]
+    },
+    {
+      "id": "smoke_meat",
+      "type": "thermal_decomposition",
+      "name": "烟熏肉（防腐）",
+      "inputs": [
+        {"material": "meat_raw", "mass_ratio": 1.0}
+      ],
+      "temperature_min": 50,
+      "temperature_optimal": 70,
+      "duration_per_kg_seconds": 43200,
+      "atmosphere_required": "reducing",
+      "outputs": [
+        {"material": "smoked_meat", "mass_ratio": 0.65, "phase": "solid"},
+        {"material": "h2o", "mass_ratio": 0.35, "phase": "gas"}
+      ]
+    },
+    {
+      "id": "fire_clay_to_brick",
+      "type": "thermal_decomposition",
+      "name": "烧制砖块",
+      "inputs": [
+        {"material": "clay", "mass_ratio": 1.0}
+      ],
+      "temperature_min": 600,
+      "temperature_optimal": 1000,
+      "duration_per_kg_seconds": 7200,
+      "atmosphere_required": "any",
+      "outputs": [
+        {"material": "brick", "mass_ratio": 0.82, "phase": "solid"},
+        {"material": "h2o", "mass_ratio": 0.18, "phase": "gas"}
+      ]
+    },
+    {
+      "id": "fire_clay_to_pottery",
+      "type": "thermal_decomposition",
+      "name": "烧制陶器",
+      "inputs": [
+        {"material": "clay", "mass_ratio": 1.0}
+      ],
+      "temperature_min": 700,
+      "temperature_optimal": 1100,
+      "duration_per_kg_seconds": 7200,
+      "atmosphere_required": "any",
+      "outputs": [
+        {"material": "pottery", "mass_ratio": 0.80, "phase": "solid"},
+        {"material": "h2o", "mass_ratio": 0.20, "phase": "gas"}
+      ]
+    },
+    {
+      "id": "melt_sand_to_glass",
+      "type": "thermal_decomposition",
+      "name": "熔砂制玻璃",
+      "inputs": [
+        {"material": "sand", "mass_ratio": 0.70},
+        {"material": "wood_ash", "mass_ratio": 0.20},
+        {"material": "limestone", "mass_ratio": 0.10}
+      ],
+      "temperature_min": 1400,
+      "temperature_optimal": 1600,
+      "duration_per_kg_seconds": 14400,
+      "atmosphere_required": "any",
+      "outputs": [
+        {"material": "glass", "mass_ratio": 0.85, "phase": "solid"},
+        {"material": "co2", "mass_ratio": 0.10, "phase": "gas"},
+        {"material": "slag", "mass_ratio": 0.05, "phase": "solid"}
+      ]
+    },
+    {
+      "id": "rust_iron",
+      "type": "dissolution",
+      "name": "铁生锈",
+      "inputs": [
+        {"material": "pure_iron", "mass_ratio": 0.70},
+        {"material": "water", "mass_ratio": 0.20},
+        {"material": "oxygen", "mass_ratio": 0.10, "source": "atmosphere"}
+      ],
+      "temperature_min": 0,
+      "temperature_optimal": 30,
+      "duration_per_kg_seconds": 259200,
+      "atmosphere_required": "any",
+      "outputs": [
+        {"material": "rust", "mass_ratio": 1.0, "phase": "solid"}
+      ]
+    },
+    {
+      "id": "render_fat_to_oil",
+      "type": "thermal_decomposition",
+      "name": "熬制油脂",
+      "inputs": [
+        {"material": "fat_animal", "mass_ratio": 1.0}
+      ],
+      "temperature_min": 40,
+      "temperature_optimal": 70,
+      "duration_per_kg_seconds": 1800,
+      "atmosphere_required": "any",
+      "outputs": [
+        {"material": "plant_oil", "mass_ratio": 0.75, "phase": "liquid"},
+        {"material": "crackling", "mass_ratio": 0.25, "phase": "solid"}
+      ]
+    },
+    {
+      "id": "tan_leather",
+      "type": "dissolution",
+      "name": "鞣制皮革",
+      "inputs": [
+        {"material": "hide_raw", "mass_ratio": 0.70},
+        {"material": "tannin_solution", "mass_ratio": 0.30}
+      ],
+      "temperature_min": 10,
+      "temperature_optimal": 25,
+      "duration_per_kg_seconds": 259200,
+      "atmosphere_required": "any",
+      "outputs": [
+        {"material": "leather_tanned", "mass_ratio": 0.60, "phase": "solid"},
+        {"material": "waste_liquid", "mass_ratio": 0.40, "phase": "liquid"}
+      ]
+    },
+    {
+      "id": "melt_ice",
+      "type": "thermal_decomposition",
+      "name": "冰融化",
+      "inputs": [
+        {"material": "ice", "mass_ratio": 1.0}
+      ],
+      "temperature_min": 1,
+      "temperature_optimal": 20,
+      "duration_per_kg_seconds": 600,
+      "atmosphere_required": "any",
+      "outputs": [
+        {"material": "water", "mass_ratio": 1.0, "phase": "liquid"}
+      ]
+    },
+    {
+      "id": "freeze_water",
+      "type": "thermal_decomposition",
+      "name": "水结冰",
+      "inputs": [
+        {"material": "water", "mass_ratio": 1.0}
+      ],
+      "temperature_max": -1,
+      "temperature_optimal": -10,
+      "duration_per_kg_seconds": 1800,
+      "atmosphere_required": "any",
+      "outputs": [
+        {"material": "ice", "mass_ratio": 1.0, "phase": "solid"}
+      ]
+    },
+    {
+      "id": "boil_water",
+      "type": "thermal_decomposition",
+      "name": "水沸腾",
+      "inputs": [
+        {"material": "water", "mass_ratio": 1.0}
+      ],
+      "temperature_min": 100,
+      "temperature_optimal": 120,
+      "duration_per_kg_seconds": 300,
+      "atmosphere_required": "any",
+      "outputs": [
+        {"material": "steam", "mass_ratio": 1.0, "phase": "gas"}
+      ]
+    }
+  ]
+}

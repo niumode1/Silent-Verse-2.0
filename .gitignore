@@ -1,0 +1,25 @@
+# Godot
+.godot/
+*.import
+*.translation
+export_presets.cfg
+
+# Builds
+builds/
+
+# IDE
+.vs/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Godot-specific
+*.tmp
+*.log
+
+# User data (debug)
+user://

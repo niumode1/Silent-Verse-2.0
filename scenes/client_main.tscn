@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://cv758mq6duu5m"]
+
+[ext_resource type="Script" path="res://scripts/client/main.gd" id="1_client_main"]
+
+[node name="ClientMain" type="Node"]
+script = ExtResource("1_client_main")
+server_address = "127.0.0.1"
+server_port = 7777
