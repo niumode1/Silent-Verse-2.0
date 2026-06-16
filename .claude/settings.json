@@ -24,7 +24,8 @@
       "Bash(sed -i '/^multiplayer.peer_disconnected.connect\\(_on_peer_disconnected\\)/d' scripts/server/network/enet_server.gd)",
       "Bash(git remote *)",
       "Bash(git log *)",
-      "Bash(git commit -m 'Phase 1 完成：物理引擎 + 网络层 + 联机验证 *)"
+      "Bash(git commit -m 'Phase 1 完成：物理引擎 + 网络层 + 联机验证 *)",
+      "Bash(git commit -m '玩法系统：世界生成 + 冶炼 + 锻造 + 自由建造 *)"
     ],
     "additionalDirectories": [
       "\\dev"
