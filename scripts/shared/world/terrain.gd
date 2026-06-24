@@ -17,23 +17,23 @@ var max_elevation: float = 1000.0
 var max_depth: float = 500.0
 
 ## 随机种子
-var seed: int = 0
+var _seed_value: int = 0
 
 ## 噪声层配置: {scale, amplitude, exponent}
 var _noise_layers: Array = []
 
 func _init(p_radius: float = 3978.87, p_seed: int = 0) -> void:
 	planet_radius = p_radius
-	seed = p_seed
+	_seed_value = p_seed
 	_setup_default_layers()
 
 ## 默认地形层（大陆轮廓→山脉→丘陵→细节）
 func _setup_default_layers() -> void:
 	_noise_layers = [
-		{"scale": 0.0003, "amplitude": 0.70, "exponent": 2.0, "offset": 0.0},   # 大陆轮廓
-		{"scale": 0.0010, "amplitude": 0.25, "exponent": 1.5, "offset": 0.0},   # 大型山脉
-		{"scale": 0.0040, "amplitude": 0.12, "exponent": 1.0, "offset": 0.0},   # 丘陵
-		{"scale": 0.0150, "amplitude": 0.05, "exponent": 0.8, "offset": 0.0},   # 细节起伏
+		{"scale": 0.0003, "amplitude": 0.60, "exponent": 1.2, "offset": 0.0, "sea_level_bias": 0.0},   # 大陆轮廓
+		{"scale": 0.0010, "amplitude": 0.30, "exponent": 1.5, "offset": 0.0},   # 大型山脉
+		{"scale": 0.0040, "amplitude": 0.14, "exponent": 1.0, "offset": 0.0},   # 丘陵
+		{"scale": 0.0150, "amplitude": 0.06, "exponent": 0.8, "offset": 0.0},   # 细节起伏
 	]
 
 ## 计算球面上某点的高度
@@ -46,21 +46,24 @@ func get_height_ratio(position: Vector3) -> float:
 	for layer in _noise_layers:
 		var scale: float = layer["scale"]
 		var amp: float = layer["amplitude"]
-		var exp: float = layer["exponent"]
+		var expo: float = layer["exponent"]
 		var off: float = layer["offset"]
 
 		# 在球面上采样 3D 噪声
-		var nx: float = normalized.x * scale + seed * 0.01 + off
-		var ny: float = normalized.y * scale + seed * 0.01 + off
-		var nz: float = normalized.z * scale + seed * 0.01 + off
+		var nx: float = normalized.x * scale + _seed_value * 0.01
+		var ny: float = normalized.y * scale + _seed_value * 0.01
+		var nz: float = normalized.z * scale + _seed_value * 0.01
 
 		var n: float = _simple_noise_3d(nx, ny, nz)
 		# 将噪声映射到 [-1, 1] 并应用振幅
-		n = (n * 2.0 - 1.0) * amp
+		n = (n * 2.0 - 1.0) * amp + off
 		# 保留符号后应用幂函数（增加对比度）
 		var sign_n: float = 1.0 if n >= 0.0 else -1.0
-		n = sign_n * pow(abs(n), exp)
+		n = sign_n * pow(abs(n), expo)
 		value += n
+
+	# 全局海平面偏移（负值=更多海洋，正值=更多陆地）
+	value += _noise_layers[0].get("sea_level_bias", -0.08)
 
 	# 钳制到 [-1, 1]
 	return clampf(value, -1.0, 1.0)
@@ -92,7 +95,7 @@ func _simple_noise_3d(x: float, y: float, z: float) -> float:
 	# 这不是真正的 Perlin/Simplex 噪声，但生成的地形已经足够用
 	var v: float = sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453
 	v = v - floor(v)  # 取小数部分
-	v = v * 0.5 + 0.5  # 映射到 [0, 1]
+	# v is already in [0, 1) from frac(), no bias needed, mean=0.5
 
 	# 加多层增加复杂度
 	v += 0.5 * (sin(x * 23.456 + y * 45.678 + z * 89.012) * 12345.6789 - floor(sin(x * 23.456 + y * 45.678 + z * 89.012) * 12345.6789))
@@ -102,4 +105,4 @@ func _simple_noise_3d(x: float, y: float, z: float) -> float:
 
 ## 使用不同种子重新生成
 func reseed(new_seed: int) -> void:
-	seed = new_seed
+	_seed_value = new_seed

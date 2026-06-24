@@ -108,7 +108,7 @@ func get_active_chunk_count() -> int:
 func cleanup(max_chunks: int = 100) -> void:
 	if _chunks.size() <= max_chunks:
 		return
-	var now: float = Time.get_unix_time_from_system()
+	var _now: float = Time.get_unix_time_from_system()
 	var keys: Array = _chunks.keys()
 	keys.sort_custom(func(a, b): return _chunks[a].last_updated < _chunks[b].last_updated)
 	while _chunks.size() > max_chunks:

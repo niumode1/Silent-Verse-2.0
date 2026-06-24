@@ -11,10 +11,10 @@ extends RefCounted
 ## 矿脉定义: {ore_material_id, min_depth, max_depth, density, host_rock_category}
 var _ore_types: Array = []
 
-var seed: int = 0
+var _seed_value: int = 0
 
 func _init(p_seed: int = 0) -> void:
-	seed = p_seed
+	_seed_value = p_seed
 	_setup_ore_types()
 
 func _setup_ore_types() -> void:
@@ -47,7 +47,7 @@ func _setup_ore_types() -> void:
 ## @param elevation: 该点海拔 m
 ## @param terrain: Terrain 实例
 ## @return Array[Dictionary] 该位置的矿脉列表 [{ore_id, richness}]
-func get_ore_deposits(position: Vector3, elevation: float, terrain: Terrain) -> Array:
+func get_ore_deposits(position: Vector3, elevation: float, _terrain: Terrain) -> Array:
 	var results: Array = []
 	var n3d: Vector3 = position.normalized()
 
@@ -91,9 +91,9 @@ func _match_host_rock(host: String, elevation: float, _n3d: Vector3) -> bool:
 
 ## 确定性哈希（同位置同种子 → 同结果）
 func _hash_position(pos: Vector3, ore_id: String) -> float:
-	var h: float = sin(pos.x * 127.1 + pos.y * 311.7 + pos.z * 74.7 + seed * 31.3 + ore_id.hash() * 0.001)
+	var h: float = sin(pos.x * 127.1 + pos.y * 311.7 + pos.z * 74.7 + _seed_value * 31.3 + ore_id.hash() * 0.001)
 	h = h - floor(h)
 	return h
 
 func reseed(new_seed: int) -> void:
-	seed = new_seed
+	_seed_value = new_seed

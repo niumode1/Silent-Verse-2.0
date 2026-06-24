@@ -43,6 +43,9 @@ var ambient_temperature: float = 20.0
 ## 累计冶炼时间 s
 var elapsed_time: float = 0.0
 
+## 炉内剩余氧气 kg（逐步消耗）
+var remaining_oxygen: float = 0.0
+
 # ============================================================
 # 建造与装载
 # ============================================================
@@ -55,8 +58,12 @@ static func can_build(wall_mat: MaterialProperty, thickness: float) -> bool:
 		return false  # 导热太快，保温差
 	return true
 
-## 装料
+## 装料（同材料自动合并）
 func add_material(material_id: String, mass_kg: float) -> void:
+	for item in contents:
+		if item["material_id"] == material_id and item.get("phase", "solid") == "solid":
+			item["mass_kg"] += mass_kg
+			return
 	contents.append({
 		"material_id": material_id,
 		"mass_kg": mass_kg,
@@ -77,13 +84,15 @@ func tick(delta: float = 1.0) -> Dictionary:
 	if is_burning:
 		heat_input = _burn_fuel(delta)
 
-	# 2. 热流失（通过炉壁传导）
+	# 2. 热流失（通过炉壁传导，带隔热因子）
 	var wall_mat: MaterialProperty = MaterialDB.get_material(wall_material)
 	var heat_loss: float = 0.0
 	if wall_mat:
+		# 砖炉保温好，有效散热面积仅 15%
+		var effective_area: float = internal_surface_area * 0.35
 		heat_loss = PhysicsCalc.heat_conduction_rate(
 			wall_mat.thermal_conductivity,
-			internal_surface_area,
+			effective_area,
 			temperature,
 			ambient_temperature,
 			wall_thickness
@@ -103,12 +112,12 @@ func tick(delta: float = 1.0) -> Dictionary:
 		var atmosphere_type: String = atmosphere
 		var rxns: Array = ReactionRegistry.find_possible_reactions(contents, temperature, atmosphere_type)
 		for match_data in rxns:
+			var oxy_sufficient: bool = (atmosphere == "oxygen")
 			var rxn_result: Dictionary = ReactionRegistry.evaluate_reaction(
-				match_data["reaction"], contents, temperature, atmosphere, delta, atmosphere != "oxygen_depleted"
+				match_data["reaction"], contents, temperature, atmosphere, delta, oxy_sufficient
 			)
 			if rxn_result["reaction_progress"] > 0:
 				result["reactions"].append(rxn_result)
-				# 更新炉内物
 				_update_contents(rxn_result)
 
 	result["temperature"] = temperature
@@ -117,7 +126,12 @@ func tick(delta: float = 1.0) -> Dictionary:
 ## 燃烧燃料
 func _burn_fuel(delta: float) -> float:
 	var total_heat: float = 0.0
-	var oxy_available: float = internal_volume * 0.21 * PhysicsConstants.rho_air_0  # O₂质量
+
+	# 鼓风补充氧气（但还原气氛不补氧）
+	# Bellows blast fresh air (always, even in reducing mode — blast furnace principle)
+	if bellows_multiplier > 1.0:
+		remaining_oxygen += internal_volume * 0.21 * PhysicsConstants.rho_air_0 * 0.1 * bellows_multiplier * delta
+		remaining_oxygen = minf(remaining_oxygen, internal_volume * 0.21 * PhysicsConstants.rho_air_0)
 
 	for i in range(contents.size() - 1, -1, -1):
 		var item: Dictionary = contents[i]
@@ -129,9 +143,14 @@ func _burn_fuel(delta: float) -> float:
 		var burn_mass: float = minf(item["mass_kg"], fuel_burn_rate * delta * bellows_multiplier)
 		var o2_needed: float = burn_mass * 1.5  # ~1.5x 氧气
 
-		if o2_needed > oxy_available:
-			burn_mass *= oxy_available / o2_needed
-			atmosphere = "oxygen_depleted"
+		if o2_needed > remaining_oxygen:
+			burn_mass *= maxf(remaining_oxygen, 0.0001) / maxf(o2_needed, 0.0001)
+			# 氧气不足 → 还原气氛（CO 主导，用于冶炼）
+			atmosphere = "reducing"
+
+		remaining_oxygen -= minf(o2_needed, remaining_oxygen)
+		if remaining_oxygen < 0:
+			remaining_oxygen = 0.0
 
 		if burn_mass <= 0:
 			continue
@@ -143,26 +162,47 @@ func _burn_fuel(delta: float) -> float:
 		# 产热
 		total_heat += PhysicsCalc.combustion_heat(burn_mass, mat.heat_value, 0.9 * bellows_multiplier)
 
-		# 生成灰烬
+		# 生成灰烬（合并到已有灰烬）
 		var ash_mass: float = burn_mass * 0.02
 		if ash_mass > 0.001:
-			contents.append({"material_id": "wood_ash", "mass_kg": ash_mass, "phase": "solid"})
+			var ash_merged := false
+			for ci in contents:
+				if ci["material_id"] == "wood_ash" and ci.get("phase", "solid") == "solid":
+					ci["mass_kg"] += ash_mass
+					ash_merged = true
+					break
+			if not ash_merged:
+				contents.append({"material_id": "wood_ash", "mass_kg": ash_mass, "phase": "solid"})
 
 		break  # 每 tick 只烧一种燃料
 
+	# 高温木炭产生 CO → 还原气氛（鼓风提供O₂燃烧产生CO，CO还原矿石）
+	if total_heat > 0 and temperature > 800.0:
+		atmosphere = "reducing"
+	elif atmosphere == "reducing" and temperature < 600.0:
+		atmosphere = "oxygen"  # 温度太低，还原气氛失效
+
 	return total_heat
 
-## 更新炉内物（反应后）
+## 更新炉内物（反应后，合并同材料）
 func _update_contents(rxn_result: Dictionary) -> void:
 	for product in rxn_result["products"]:
 		if product.get("phase", "solid") == "gas":
 			continue
-		contents.append({
-			"material_id": product["material_id"],
-			"mass_kg": product["mass_kg"],
-			"phase": product.get("phase", "solid"),
-			"purity": product.get("purity", 1.0)
-		})
+		# 合并到已有相同材料
+		var merged_prod := false
+		for item in contents:
+			if item["material_id"] == product["material_id"] and item.get("phase", "solid") == product.get("phase", "solid"):
+				item["mass_kg"] += product["mass_kg"]
+				merged_prod = true
+				break
+		if not merged_prod:
+			contents.append({
+				"material_id": product["material_id"],
+				"mass_kg": product["mass_kg"],
+				"phase": product.get("phase", "solid"),
+				"purity": product.get("purity", 1.0)
+			})
 
 ## 获取总热容
 func _get_total_heat_capacity() -> float:
@@ -180,7 +220,8 @@ func _get_total_heat_capacity() -> float:
 ## 点火
 func ignite() -> void:
 	is_burning = true
-	fuel_burn_rate = 0.0005  # kg/s 基准燃耗
+	fuel_burn_rate = 0.0002  # kg/s，慢速持续燃烧
+	remaining_oxygen = internal_volume * 0.21 * PhysicsConstants.rho_air_0
 
 ## 熄火
 func extinguish() -> void:
@@ -189,7 +230,6 @@ func extinguish() -> void:
 ## 鼓风
 func set_bellows(level: float) -> void:
 	bellows_multiplier = clampf(level, 0.5, 3.0)
-	# 鼓风增加氧供应，可能恢复气氛
 	if bellows_multiplier > 1.5:
 		atmosphere = "oxygen"
 
@@ -211,9 +251,17 @@ func tap_metal(metal_id: String = "pure_iron") -> Array:
 			contents.remove_at(i)
 	return metal
 
-## 获取炉内物质概览
+## 获取炉内物质概览（按材料聚合）
 func get_contents_summary() -> Array:
-	var summary: Array = []
+	var aggregated: Dictionary = {}
 	for item in contents:
-		summary.append(item["material_id"] + ": " + str(item["mass_kg"]) + "kg")
+		var key: String = item["material_id"] + "_" + item.get("phase", "solid")
+		if not aggregated.has(key):
+			aggregated[key] = {"material_id": item["material_id"], "mass_kg": 0.0, "phase": item.get("phase", "solid")}
+		aggregated[key]["mass_kg"] += item["mass_kg"]
+	var summary: Array = []
+	for key in aggregated:
+		var a: Dictionary = aggregated[key]
+		if a["mass_kg"] > 0.001:
+			summary.append(a["material_id"] + ": " + str(snapped(a["mass_kg"], 0.001)) + "kg")
 	return summary

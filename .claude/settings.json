@@ -25,7 +25,20 @@
       "Bash(git remote *)",
       "Bash(git log *)",
       "Bash(git commit -m 'Phase 1 完成：物理引擎 + 网络层 + 联机验证 *)",
-      "Bash(git commit -m '玩法系统：世界生成 + 冶炼 + 锻造 + 自由建造 *)"
+      "Bash(git commit -m '玩法系统：世界生成 + 冶炼 + 锻造 + 自由建造 *)",
+      "Bash(git ls-remote *)",
+      "Bash(sed -i '319s/^\\\\t\\\\tassert_eq\\(wolf_bite\\\\[\"damage_type\"\\\\], \"puncture\", \"wolf bite = puncture\"\\)/\\\\t\\\\tvar dmg_type_wolf: String = wolf_bite[\"damage_type\"]\\\\n\\\\t\\\\tassert_eq\\(dmg_type_wolf, \"puncture\", \"wolf bite = puncture\"\\)/' tests/test_physics.gd)",
+      "Bash(sed -i '335s/^\\\\t\\\\tassert_eq\\(result\\\\[\"damage_type\"\\\\], \"blunt\", \"fall 5m = blunt\"\\)/\\\\t\\\\tvar dmg_type_fall: String = result[\"damage_type\"]\\\\n\\\\t\\\\tassert_eq\\(dmg_type_fall, \"blunt\", \"fall 5m = blunt\"\\)/' tests/test_physics.gd)",
+      "Bash(python -c ' *)",
+      "Bash(\"F:/godot/Godot_v4.6.3-stable_win64.exe\" --headless --check-only --path \"e:/Silent Verse 2.0\")",
+      "Bash(\"F:/godot/Godot_v4.6.3-stable_win64.exe\" --headless --path \"e:/Silent Verse 2.0\" --script \"tests/test_physics.gd\")",
+      "Bash(\"F:/godot/Godot_v4.6.3-stable_win64.exe\" --headless --path \"e:/Silent Verse 2.0\" scenes/test_world.tscn)",
+      "Bash(python)",
+      "Bash(python add_materials.py)",
+      "Bash(python fix_reaction.py)",
+      "Bash(\"F:/godot/Godot_v4.6.3-stable_win64.exe\" --headless --path \"e:/Silent Verse 2.0\" --check-only)",
+      "Bash(\"F:/godot/Godot_v4.6.3-stable_win64.exe\" --headless --path \"e:/Silent Verse 2.0\" scenes/client_3d.tscn)",
+      "Bash(\"F:/godot/Godot_v4.6.3-stable_win64.exe\" --editor --path \"e:/Silent Verse 2.0\" --quit)"
     ],
     "additionalDirectories": [
       "\\dev"

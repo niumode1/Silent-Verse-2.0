@@ -8,7 +8,7 @@ class_name WorldGenerator
 extends RefCounted
 
 ## 赛季种子
-var seed: int = 0
+var _seed_value: int = 0
 
 ## 行星半径 m
 var planet_radius: float = 3978.87
@@ -37,19 +37,19 @@ var generation_progress: float = 0.0
 # ============================================================
 
 func _init(p_seed: int = 0, p_radius: float = 3978.87) -> void:
-	seed = p_seed
+	_seed_value = p_seed
 	planet_radius = p_radius
 
 func generate() -> void:
-	print("WorldGenerator: Generating world (seed=", seed, ", R=", planet_radius, "m)...")
+	print("WorldGenerator: Generating world (_seed_value=", _seed_value, ", R=", planet_radius, "m)...")
 
 	# 1. 地形
-	terrain = Terrain.new(planet_radius, seed)
+	terrain = Terrain.new(planet_radius, _seed_value)
 	terrain.max_elevation = max_elevation
 	generation_progress = 0.2
 
 	# 2. 矿产
-	ore_gen = OreVein.new(seed)
+	ore_gen = OreVein.new(_seed_value)
 	generation_progress = 0.4
 
 	# 3. 土壤

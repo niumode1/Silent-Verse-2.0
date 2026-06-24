@@ -167,26 +167,40 @@ func evaluate_reaction(reaction: Dictionary, inputs: Array, temperature: float,
 						_atmosphere: String, elapsed_time_s: float,
 						oxygen_sufficient: bool = true) -> Dictionary:
 
-	var total_input_mass: float = 0.0
-	for inp in inputs:
-		total_input_mass += inp["mass_kg"]
-
-	if total_input_mass < 0.0001:
-		return {"products": [], "heat_released_j": 0.0, "mass_conservation_ok": true}
-
-	# 按输入比例分配各反应物
+	# 找到所有匹配的输入物并确定限制反应物
 	var used_masses: Dictionary = {}
+	var input_refs: Dictionary = {}
+	var limiting_multiplier: float = INF
+
 	for inp_spec in reaction["inputs"]:
 		if inp_spec.get("source", "") == "atmosphere":
 			continue
 		var spec_id: String = inp_spec.get("material", inp_spec.get("material_category", ""))
 		var spec_ratio: float = inp_spec["mass_ratio"]
-		# 找到对应输入
+		if spec_ratio <= 0:
+			continue
 		for inp in inputs:
 			if inp["material_id"] == spec_id or _material_matches(inp["material_id"], inp_spec):
-				var allocated: float = total_input_mass * spec_ratio
-				used_masses[spec_id] = minf(allocated, inp["mass_kg"])
+				var available: float = inp["mass_kg"]
+				used_masses[spec_id] = available
+				input_refs[spec_id] = inp
+				var capacity: float = available / spec_ratio
+				if capacity < limiting_multiplier:
+					limiting_multiplier = capacity
 				break
+
+	if limiting_multiplier >= INF or limiting_multiplier <= 0:
+		return {"products": [], "heat_released_j": 0.0, "mass_conservation_ok": true, "reaction_progress": 0.0, "total_input_mass": 0.0, "total_output_mass": 0.0}
+
+	# 计算反应规模（受限制反应物约束）
+	var total_input_mass: float = 0.0
+	for inp_spec in reaction["inputs"]:
+		if inp_spec.get("source", "") == "atmosphere":
+			continue
+		var sid: String = inp_spec.get("material", inp_spec.get("material_category", ""))
+		var sr: float = inp_spec["mass_ratio"]
+		if sr > 0 and used_masses.has(sid):
+			total_input_mass += sr * limiting_multiplier
 
 	# 计算反应进度（受温度和时间影响）
 	var temp_optimal: float = reaction.get("temperature_optimal", reaction.get("temperature_min", 100))
@@ -201,6 +215,20 @@ func evaluate_reaction(reaction: Dictionary, inputs: Array, temperature: float,
 	if reaction.has("incomplete_combustion") and not oxygen_sufficient:
 		use_incomplete = true
 
+	# 消耗反应物
+	var effective_mass: float = total_input_mass * progress
+	for spec_id in input_refs:
+		var inp_item: Dictionary = input_refs[spec_id]
+		var spec_ratio: float = 0.0
+		for inp_spec in reaction["inputs"]:
+			if inp_spec.get("material", "") == spec_id or inp_spec.get("material_category", "") == spec_id:
+				spec_ratio = inp_spec["mass_ratio"]
+				break
+		if spec_ratio > 0:
+			var consumed: float = spec_ratio * limiting_multiplier * progress
+			consumed = minf(consumed, inp_item["mass_kg"])
+			inp_item["mass_kg"] -= consumed
+
 	# 生成产物
 	var products: Array = []
 	var output_list: Array
@@ -212,10 +240,9 @@ func evaluate_reaction(reaction: Dictionary, inputs: Array, temperature: float,
 	var total_output_mass: float = 0.0
 	for out in output_list:
 		if out.get("phase", "solid") == "gas":
-			# 气体产物直接释放，但仍计入质量
-			total_output_mass += total_input_mass * out["mass_ratio"] * progress
+			total_output_mass += effective_mass * out["mass_ratio"]
 			continue
-		var product_mass: float = total_input_mass * out["mass_ratio"] * progress
+		var product_mass: float = effective_mass * out["mass_ratio"]
 		total_output_mass += product_mass
 		var product_entry: Dictionary = {
 			"material_id": out["material"],
@@ -231,17 +258,17 @@ func evaluate_reaction(reaction: Dictionary, inputs: Array, temperature: float,
 	# 热量计算
 	var heat: float = 0.0
 	if reaction.has("energy_output_mj_per_kg_input"):
-		heat = total_input_mass * reaction["energy_output_mj_per_kg_input"] * 1e6 * progress
+		heat = effective_mass * reaction["energy_output_mj_per_kg_input"] * 1e6
 	if reaction.get("is_exothermic", false):
-		heat = total_input_mass * reaction.get("exothermic_heat_kj_per_kg", 0.0) * 1000.0 * progress
+		heat = effective_mass * reaction.get("exothermic_heat_kj_per_kg", 0.0) * 1000.0
 
 	# 质量守恒验证
-	var mass_ok: bool = abs(total_input_mass - total_output_mass) < total_input_mass * 0.01
+	var mass_ok: bool = abs(effective_mass - total_output_mass) < effective_mass * 0.01 + 0.001
 
 	return {
 		"products": products,
 		"heat_released_j": heat,
-		"total_input_mass": total_input_mass,
+		"total_input_mass": effective_mass,
 		"total_output_mass": total_output_mass,
 		"reaction_progress": progress,
 		"mass_conservation_ok": mass_ok,

@@ -82,8 +82,8 @@ func grow(current_day: float, soil: Dictionary, sunlight: float, temperature: fl
 
 	# 从土壤消耗养分
 	var n_consumed: float = data["n_need"] * growth / 1000.0
-	var p_consumed: float = n_consumed * 0.3
-	var k_consumed: float = n_consumed * 0.5
+	var _p_consumed: float = n_consumed * 0.3
+	var _k_consumed: float = n_consumed * 0.5
 
 	return growth
 

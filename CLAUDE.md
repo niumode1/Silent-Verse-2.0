@@ -168,10 +168,10 @@ Silent Verse 2.0/
 ├── tests/
 │   └── test_physics.gd            # 物理公式单元测试
 └── .claude/                       # Claude Code 配置
-    ├── agents/    → 4 个审查代理
-    ├── commands/  → 7 个斜杠命令
-    ├── references/ → 参考文档
-    └── hooks/     → 会话钩子
+	├── agents/    → 4 个审查代理
+	├── commands/  → 7 个斜杠命令
+	├── references/ → 参考文档
+	└── hooks/     → 会话钩子
 ```
 
 ## 开发阶段

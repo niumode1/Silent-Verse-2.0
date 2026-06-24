@@ -293,7 +293,8 @@ func test_strike_damage() -> void:
 	var result := PhysicsCalc.calculate_strike_damage(
 		flint, 2.0, 15.0, 0.8, 0.002, meat, 1.0
 	)
-	assert_eq(result["damage_type"], "penetration", "sharp flint → penetration")
+	var dmg_type1: String = result["damage_type"]
+	assert(dmg_type1 == "penetration", "sharp flint → penetration")
 	assert_gt(result["base_damage"], 0.0, "strike damage positive")
 	assert_gt(result["contact_pressure_mpa"], meat.yield_strength, "pressure exceeds flesh yield")
 
@@ -303,7 +304,8 @@ func test_strike_damage() -> void:
 		var blunt := PhysicsCalc.calculate_strike_damage(
 			oak, 1.5, 10.0, 0.5, 0.05, meat, 1.0
 		)
-		assert_eq(blunt["damage_type"], "blunt", "blunt stick → blunt damage")
+		var dmg_type_blunt: String = blunt["damage_type"]
+		assert(dmg_type_blunt == "blunt", "blunt stick → blunt damage")
 
 func test_bite_damage() -> void:
 	print("[Bite Damage]")
@@ -315,7 +317,8 @@ func test_bite_damage() -> void:
 	# 狼咬
 	var wolf := AnimalBody.create_wolf()
 	var wolf_bite := wolf.calculate_bite_damage(meat, 2.0)
-	assert_eq(wolf_bite["damage_type"], "puncture", "wolf bite = puncture")
+	var dmg_type_wolf: String = wolf_bite["damage_type"]
+	assert(dmg_type_wolf == "puncture", "wolf bite = puncture")
 	assert_gt(wolf_bite["base_damage"], 0.0, "wolf bite damage positive")
 
 	# 兔子咬
@@ -331,7 +334,8 @@ func test_fall_damage() -> void:
 		return
 
 	var result := PhysicsCalc.calculate_fall_damage(80.0, 5.0, 1.0, meat)
-	assert_eq(result["damage_type"], "blunt", "fall 5m = blunt")
+	var dmg_type_fall: String = result["damage_type"]
+	assert(dmg_type_fall == "blunt", "fall 5m = blunt")
 	assert_gt(result["base_damage"], 0.0, "fall damage positive")
 
 	# 更高处坠落伤害更大
