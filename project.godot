@@ -15,7 +15,7 @@ config/description="无言史诗 — 第一人称 3D 硬核生存轮回 MMO。�
 config/version="0.1.0"
 config/tags=PackedStringArray("mmo", "survival", "simulation", "physics")
 run/main_scene="res://scenes/client_3d.tscn"
-config/features=PackedStringArray("4.7")
+config/features=PackedStringArray("4.6")
 config/icon="res://assets/icon.svg"
 
 [autoload]
