@@ -17,6 +17,15 @@ var _by_type: Dictionary = {}
 ## 是否已加载
 var is_loaded: bool = false
 
+## 质量守恒校验容差（输出配比之和必须 ≈ 1.0）
+const MASS_BALANCE_TOLERANCE := 0.02
+
+## 加载时发现的质量不守恒反应 [{reaction_id, outputs_sum}]
+var _mass_balance_errors: Array = []
+
+func get_mass_balance_errors() -> Array:
+	return _mass_balance_errors
+
 # ============================================================
 # 加载
 # ============================================================
@@ -49,9 +58,30 @@ func load_from_file(file_path: String = "res://scripts/shared/data/reactions.jso
 			_by_type[rxn_type] = []
 		_by_type[rxn_type].append(rxn)
 
+	_validate_mass_balance()
+
 	is_loaded = true
 	print("ReactionSystem: Loaded ", _reactions.size(), " reactions in ", _by_type.size(), " types")
 	return true
+
+
+## 校验每条反应的输出质量配比之和是否为 1.0。
+## 物质守恒是硬约束：不守恒的反应会在加载时被明确报错并记录。
+func _validate_mass_balance() -> void:
+	_mass_balance_errors.clear()
+	for rxn_id in _reactions:
+		var rxn: Dictionary = _reactions[rxn_id]
+		var total_out: float = 0.0
+		for out in rxn.get("outputs", []):
+			total_out += out.get("mass_ratio", 0.0)
+
+		if absf(total_out - 1.0) > MASS_BALANCE_TOLERANCE:
+			_mass_balance_errors.append({
+				"reaction_id": rxn_id,
+				"outputs_sum": total_out
+			})
+			push_error("ReactionSystem: 质量守恒违规 — %s 输出配比之和 = %.3f（应为 1.0）"
+				% [rxn_id, total_out])
 
 # ============================================================
 # 反应查询
@@ -190,7 +220,9 @@ func evaluate_reaction(reaction: Dictionary, inputs: Array, temperature: float,
 				break
 
 	if limiting_multiplier >= INF or limiting_multiplier <= 0:
-		return {"products": [], "heat_released_j": 0.0, "mass_conservation_ok": true, "reaction_progress": 0.0, "total_input_mass": 0.0, "total_output_mass": 0.0}
+		return {"products": [], "heat_released_j": 0.0, "mass_conservation_ok": true,
+			"reaction_progress": 0.0, "total_input_mass": 0.0, "total_output_mass": 0.0,
+			"incomplete_combustion": false}
 
 	# 计算反应规模（受限制反应物约束）
 	var total_input_mass: float = 0.0
@@ -205,6 +237,13 @@ func evaluate_reaction(reaction: Dictionary, inputs: Array, temperature: float,
 	# 计算反应进度（受温度和时间影响）
 	var temp_optimal: float = reaction.get("temperature_optimal", reaction.get("temperature_min", 100))
 	var temp_min: float = reaction.get("temperature_min", 0.0)
+
+	# 低于反应温度 → 完全不反应，而不是以 10% 速率缓慢反应
+	if temperature < temp_min:
+		return {"products": [], "heat_released_j": 0.0, "mass_conservation_ok": true,
+			"reaction_progress": 0.0, "total_input_mass": 0.0, "total_output_mass": 0.0,
+			"incomplete_combustion": false}
+
 	var temp_factor: float = clampf((temperature - temp_min) / maxf(temp_optimal - temp_min, 1.0), 0.1, 2.0)
 	var duration_per_kg: float = reaction.get("duration_per_kg_seconds", 3600.0)
 	var progress: float = temp_factor * elapsed_time_s / duration_per_kg

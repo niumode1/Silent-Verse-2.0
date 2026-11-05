@@ -27,6 +27,10 @@ extends Resource
 ## 材料大类：wood / stone / metal / organic / soil / liquid / processed / ore
 @export var category: String = ""
 
+## 微观结构：crystalline / fibrous / granular / amorphous / porous / lamellar
+## 决定各向异性、渗漏、湿态强度、可编织性等行为的判据
+@export var microstructure: String = "crystalline"
+
 # ============================================================
 # 力学属性 (Mechanical)
 # ============================================================
@@ -76,6 +80,12 @@ extends Resource
 ## 动摩擦系数 μk（对自身材料，干燥条件）
 @export var kinetic_friction: float = 0.4
 
+## 标准表面粗糙度 µm（物品加工方式可覆盖：抛光/劈砍/锯切/编织）
+@export var surface_roughness_um: float = 10.0
+
+## 横纹/顺纹摩擦比（1.0 = 各向同性；纹路方向由物品几何决定）
+@export var friction_anisotropy: float = 1.0
+
 ## 滚动阻力系数 Crr
 @export var rolling_resistance: float = 0.05
 
@@ -94,6 +104,9 @@ extends Resource
 
 ## 熔点 °C（inf 表示不熔化/直接分解）
 @export var melting_point: float = 1500.0
+
+## 软化温度 °C（-1 = 不适用；木材/皮革/纤维/树脂等非晶体材料的强度拐点）
+@export var softening_point_c: float = -1.0
 
 ## 沸点 °C（inf 表示不沸腾/直接分解）
 @export var boiling_point: float = 3000.0
@@ -294,6 +307,13 @@ func validate() -> Dictionary:
         errors.append("kinetic_friction out of realistic range")
     if kinetic_friction >= static_friction and not (static_friction == 0.0 and kinetic_friction == 0.0):
         errors.append("μk should be less than μs")
+    var valid_microstructures := ["crystalline", "fibrous", "granular", "amorphous", "porous", "lamellar"]
+    if not valid_microstructures.has(microstructure):
+        errors.append("invalid microstructure: " + microstructure)
+    if surface_roughness_um < 0:
+        errors.append("surface_roughness_um must be >= 0")
+    if friction_anisotropy < 1.0:
+        errors.append("friction_anisotropy must be >= 1.0")
     if poisson_ratio < 0 or poisson_ratio > 0.5:
         errors.append("poisson_ratio must be in [0, 0.5]")
     if restitution < 0 or restitution > 1:

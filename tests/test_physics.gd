@@ -273,7 +273,8 @@ func test_tool_formulas() -> void:
 					"flint pick can mine granite")
 		assert_true(not PhysicsCalc.can_mine(granite.hardness_mohs, flint.hardness_mohs),
 					"granite pick cannot mine flint")
-		var vol := PhysicsCalc.mine_volume_per_strike(2000.0, 1e-4, granite.compressive_strength,
+		# 30 kN 落在 1e-4 m² 尖头 = 300 MPa > 花岗岩抗压 200 MPa
+		var vol := PhysicsCalc.mine_volume_per_strike(30000.0, 1e-4, granite.compressive_strength,
 													   granite.fracture_toughness)
 		assert_gt(vol, 0.0, "mine_volume positive for strong pick")
 

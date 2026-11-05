@@ -23,7 +23,8 @@ func _ready() -> void:
 
 func _test_world_generation() -> void:
 	print("\n[1] World Generation")
-	var gen := WorldGenerator.new(42, 3978.87)
+	var gen := WorldGenerator.new(WorldGenerator.DEFAULT_SEED, WorldGenerator.DEFAULT_PLANET_RADIUS)
+	gen.max_elevation = WorldGenerator.DEFAULT_MAX_ELEVATION
 	gen.generate()
 	print("  Generated: terrain=", gen.terrain != null, " soil=", gen.soil_grid != null)
 	print("  Initial trees: ", gen.trees.size())

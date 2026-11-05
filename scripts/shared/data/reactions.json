@@ -84,9 +84,9 @@
       "duration_per_kg_seconds": 1800,
       "atmosphere_required": "reducing",
       "outputs": [
-        {"material": "pure_iron", "mass_ratio": 0.38, "purity_range": [0.85, 0.95], "phase": "solid"},
-        {"material": "slag", "mass_ratio": 0.32, "phase": "solid"},
-        {"material": "co2", "mass_ratio": 0.18, "phase": "gas"},
+        {"material": "pure_iron", "mass_ratio": 0.40, "purity_range": [0.85, 0.95], "phase": "solid"},
+        {"material": "slag", "mass_ratio": 0.34, "phase": "solid"},
+        {"material": "co2", "mass_ratio": 0.19, "phase": "gas"},
         {"material": "co", "mass_ratio": 0.07, "phase": "gas", "hazardous": true}
       ]
     },
@@ -104,10 +104,10 @@
       "duration_per_kg_seconds": 1800,
       "atmosphere_required": "reducing",
       "outputs": [
-        {"material": "pure_iron", "mass_ratio": 0.40, "purity_range": [0.88, 0.96], "phase": "solid"},
-        {"material": "slag", "mass_ratio": 0.28, "phase": "solid"},
-        {"material": "co2", "mass_ratio": 0.18, "phase": "gas"},
-        {"material": "co", "mass_ratio": 0.07, "phase": "gas", "hazardous": true}
+        {"material": "pure_iron", "mass_ratio": 0.43, "purity_range": [0.88, 0.96], "phase": "solid"},
+        {"material": "slag", "mass_ratio": 0.30, "phase": "solid"},
+        {"material": "co2", "mass_ratio": 0.19, "phase": "gas"},
+        {"material": "co", "mass_ratio": 0.08, "phase": "gas", "hazardous": true}
       ]
     },
     {
@@ -142,9 +142,9 @@
       "duration_per_kg_seconds": 900,
       "atmosphere_required": "reducing",
       "outputs": [
-        {"material": "pure_tin", "mass_ratio": 0.51, "purity_range": [0.85, 0.95], "phase": "solid"},
-        {"material": "slag", "mass_ratio": 0.15, "phase": "solid"},
-        {"material": "co2", "mass_ratio": 0.24, "phase": "gas"}
+        {"material": "pure_tin", "mass_ratio": 0.57, "purity_range": [0.85, 0.95], "phase": "solid"},
+        {"material": "slag", "mass_ratio": 0.17, "phase": "solid"},
+        {"material": "co2", "mass_ratio": 0.26, "phase": "gas"}
       ]
     },
     {
@@ -160,7 +160,7 @@
       "duration_per_kg_seconds": 600,
       "atmosphere_required": "reducing",
       "outputs": [
-        {"material": "bronze", "mass_ratio": 0.95, "phase": "solid"}
+        {"material": "bronze", "mass_ratio": 1.0, "phase": "solid"}
       ]
     },
     {
@@ -276,7 +276,7 @@
       "duration_per_kg_seconds": 259200,
       "atmosphere_required": "aerobic",
       "outputs": [
-        {"material": "vinegar", "mass_ratio": 0.98, "phase": "liquid"}
+        {"material": "vinegar", "mass_ratio": 1.0, "phase": "liquid"}
       ]
     },
     {

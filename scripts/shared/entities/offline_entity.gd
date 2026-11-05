@@ -79,14 +79,10 @@ var has_alarm: bool = false
 var alarm_range: float = 0.0
 
 # ============================================================
-# 物品栏快照
+# 携带物品
 # ============================================================
-
-## 携带的物品 [{"material_id": "...", "mass_kg": ...}]
-var inventory: Array = []
-
-## 穿戴的护甲 {"head": mat_id, "chest": mat_id, ...}
-var equipped_armor: Dictionary = {}
+# 离线实体不保存背包快照。它拿在手里/绑在身上的物品由
+# ItemRegistry 的 hand/attached 索引按 entity_id 引用。
 
 # ============================================================
 # 代谢衰减常量

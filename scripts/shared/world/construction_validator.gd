@@ -23,13 +23,19 @@ static func evaluate(parts: Array, connections: Array) -> Dictionary:
 		var mat: MaterialProperty = MaterialDB.get_material(part.get("material_id", ""))
 		if not mat:
 			return {"valid": false, "reason": "unknown material: " + part.get("material_id", "")}
-		loaded_parts.append({
+		var loaded_part := {
 			"material": mat,
+			"material_id": part.get("material_id", ""),
 			"shape": part.get("shape", "block"),
-			"mass_kg": part.get("mass_kg", mat.density * 0.001),
 			"dimensions": part.get("dimensions", {"length": 0.5, "width": 0.1, "height": 0.1}),
 			"position": part.get("position", Vector3.ZERO)
-		})
+		}
+		# 质量由材料 + 几何推导；没有几何时才兼容旧的显式 mass_kg
+		var derived_mass: float = ItemGeometry.part_mass(part)
+		if derived_mass <= 0.0:
+			derived_mass = float(part.get("mass_kg", mat.density * 0.001))
+		loaded_part["mass_kg"] = derived_mass
+		loaded_parts.append(loaded_part)
 
 	# 2. 验证每个连接的物理可行性
 	for conn in connections:
@@ -190,7 +196,10 @@ static func _derive_properties(parts: Array, connections: Array) -> Dictionary:
 	# 找到"刀刃"部件（形状为 blade/wedge/shard 的部件）
 	for part in parts:
 		total_mass += part["mass_kg"]
-		total_volume += part["mass_kg"] / part["material"].density
+		var part_volume: float = ItemGeometry.part_volume(part)
+		if part_volume <= 0.0 and part["material"].density > 0.0:
+			part_volume = part["mass_kg"] / part["material"].density
+		total_volume += part_volume
 
 		if part["material"].hardness_mohs > max_hardness:
 			max_hardness = part["material"].hardness_mohs

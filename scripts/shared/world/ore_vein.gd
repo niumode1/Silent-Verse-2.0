@@ -29,14 +29,14 @@ func _setup_ore_types() -> void:
 		{"id": "copper_ore_malachite", "min_h": -100,"max_h": 300, "density": 0.08, "host": "sedimentary"},
 
 		# 铁矿 — 火山/深层
-		{"id": "iron_ore_hematite",  "min_h": -300, "max_h": 600, "density": 0.10, "host": "volcanic"},
+		{"id": "iron_ore_hematite",  "min_h": -300, "max_h": 600, "density": 0.10, "host": "metamorphic"},
 		{"id": "iron_ore_magnetite", "min_h": -500, "max_h": 400, "density": 0.06, "host": "volcanic"},
 
 		# 锡矿 — 花岗岩伴生
 		{"id": "tin_ore_cassiterite","min_h": -200, "max_h": 500, "density": 0.05, "host": "granite"},
 
 		# 贵金属 — 稀有，深层
-		{"id": "gold_ore",           "min_h": -800, "max_h": 200, "density": 0.01, "host": "volcanic"},
+		{"id": "gold_ore",           "min_h": -800, "max_h": 200, "density": 0.01, "host": "metamorphic"},
 
 		# 煤炭 — 沉积岩
 		{"id": "coal",               "min_h": -400, "max_h": 300, "density": 0.12, "host": "sedimentary"},
@@ -61,10 +61,11 @@ func get_ore_deposits(position: Vector3, elevation: float, _terrain: Terrain) ->
 		if ore_seed > ore["density"]:
 			continue
 
-		# 寄主岩石匹配
+		# 寄主地质省匹配
 		var host: String = ore["host"]
 		if host != "any":
-			if not _match_host_rock(host, elevation, n3d):
+			var province := _terrain.get_province(position)
+			if not _match_host_rock(host, province):
 				continue
 
 		# 富集度 0-1
@@ -75,18 +76,18 @@ func get_ore_deposits(position: Vector3, elevation: float, _terrain: Terrain) ->
 
 	return results
 
-## 宿主岩石匹配
-func _match_host_rock(host: String, elevation: float, _n3d: Vector3) -> bool:
+## 寄主地质省匹配
+func _match_host_rock(host: String, province: Dictionary) -> bool:
+	var flags: int = int(province.get("flags", 0))
 	match host:
 		"sedimentary":
-			# 沉积岩在中低海拔
-			return elevation > -400 and elevation < 400
+			return (flags & Terrain.PROV_SEDIMENTARY) != 0
 		"volcanic":
-			# 火山岩在中高海拔或深层
-			return elevation > 300 or elevation < -300
+			return (flags & Terrain.PROV_VOLCANIC) != 0
+		"metamorphic":
+			return (flags & Terrain.PROV_METAMORPHIC) != 0
 		"granite":
-			# 花岗岩在高海拔
-			return elevation > 200
+			return (flags & Terrain.PROV_GRANITE) != 0
 	return false
 
 ## 确定性哈希（同位置同种子 → 同结果）

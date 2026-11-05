@@ -85,6 +85,7 @@ func _populate_from_dict(mat: MaterialProperty, data: Dictionary) -> void:
 	mat.display_name = data.get("display_name", "")
 	mat.phase = data.get("phase", "solid")
 	mat.category = data.get("category", "")
+	mat.microstructure = data.get("microstructure", "crystalline")
 
 	# 力学
 	mat.density = data.get("density", 1000.0)
@@ -102,6 +103,8 @@ func _populate_from_dict(mat: MaterialProperty, data: Dictionary) -> void:
 	mat.fatigue_limit = data.get("fatigue_limit", 1.0)
 	mat.static_friction = data.get("static_friction", 0.6)
 	mat.kinetic_friction = data.get("kinetic_friction", 0.4)
+	mat.surface_roughness_um = data.get("surface_roughness_um", 10.0)
+	mat.friction_anisotropy = data.get("friction_anisotropy", 1.0)
 	mat.rolling_resistance = data.get("rolling_resistance", 0.05)
 	mat.restitution = data.get("restitution", 0.3)
 	mat.damping_coefficient = data.get("damping_coefficient", 0.1)
@@ -109,6 +112,7 @@ func _populate_from_dict(mat: MaterialProperty, data: Dictionary) -> void:
 
 	# 热学
 	mat.melting_point = data.get("melting_point", 1500.0)
+	mat.softening_point_c = data.get("softening_point_c", -1.0)
 	mat.boiling_point = data.get("boiling_point", 3000.0)
 	mat.specific_heat = data.get("specific_heat", 1000.0)
 	mat.thermal_conductivity = data.get("thermal_conductivity", 1.0)

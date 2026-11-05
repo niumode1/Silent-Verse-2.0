@@ -11,7 +11,8 @@ extends Node
 ## 引用 ENetServer 用于广播
 var _server: ENetServer = null
 
-## 在线玩家完整数据 {peer_id: {player_body, position, inventory, ...}}
+## 在线玩家完整数据 {peer_id: {player_body, position, equipped, ...}}
+## 携带物品不在此保存，由 ItemRegistry 的手/绑扎/空腔索引按 peer_id 引用。
 var _player_data: Dictionary = {}
 
 ## 世界状态引用（后续接入）
@@ -33,7 +34,7 @@ func _on_player_joined(peer_id: int) -> void:
 	body.roll_innate_traits()
 	_player_data[peer_id] = {
 		"player_body": body,
-		"inventory": [],
+		# 过渡期旧装备槽；步骤 4 改为从实际手持 ItemEntity 推导武器
 		"equipped": {},
 		"position": Vector3.ZERO
 	}

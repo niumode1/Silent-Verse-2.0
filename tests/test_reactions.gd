@@ -101,12 +101,14 @@ func test_combustion() -> void:
 	assert_gt(result["heat_released_j"], 0.0, "burn wood produces heat")
 	assert_gt(result["reaction_progress"], 0.0, "burn wood progresses at 600°C")
 
-	# 温度不足 → 不反应
-	var cold := ReactionRegistry.evaluate_reaction(burn, inputs, 200.0, "oxygen", 3600.0, true)
+	# 温度不足 → 不反应（用新鲜输入，避免上一次反应已消耗）
+	var cold := ReactionRegistry.evaluate_reaction(burn,
+		[{"material_id": "oak_wood", "mass_kg": 10.0}], 200.0, "oxygen", 3600.0, true)
 	assert_eq(cold["reaction_progress"], 0.0, "no burn at 200°C", 0.01)
 
 	# 不完全燃烧（缺氧）
-	var incomplete := ReactionRegistry.evaluate_reaction(burn, inputs, 600.0, "oxygen", 3600.0, false)
+	var incomplete := ReactionRegistry.evaluate_reaction(burn,
+		[{"material_id": "oak_wood", "mass_kg": 10.0}], 600.0, "oxygen", 3600.0, false)
 	assert_true(incomplete["incomplete_combustion"], "incomplete combustion when O₂ depleted")
 
 	# 木炭燃烧产生更多热
@@ -136,8 +138,12 @@ func test_smelting() -> void:
 			break
 	assert_true(has_iron, "smelt produces iron")
 
-	# 温度不足 → 不反应
-	var cold := ReactionRegistry.evaluate_reaction(smelt, inputs, 800.0, "reducing", 3600.0, true)
+	# 温度不足 → 不反应（用新鲜输入）
+	var cold := ReactionRegistry.evaluate_reaction(smelt, [
+		{"material_id": "iron_ore_hematite", "mass_kg": 5.5},
+		{"material_id": "charcoal", "mass_kg": 2.0},
+		{"material_id": "limestone", "mass_kg": 1.0}
+	], 800.0, "reducing", 3600.0, true)
 	assert_eq(cold["reaction_progress"], 0.0, "no smelting at 800°C", 0.01)
 
 	# 铜冶炼温度更低
@@ -168,8 +174,9 @@ func test_thermal_decomposition() -> void:
 			break
 	assert_true(has_quicklime, "calcination produces quicklime")
 
-	# 温度不足
-	var cold := ReactionRegistry.evaluate_reaction(calcine, inputs, 500.0, "any", 7200.0, true)
+	# 温度不足（用新鲜输入）
+	var cold := ReactionRegistry.evaluate_reaction(calcine,
+		[{"material_id": "limestone", "mass_kg": 10.0}], 500.0, "any", 7200.0, true)
 	assert_eq(cold["reaction_progress"], 0.0, "no calcination at 500°C", 0.01)
 
 	# 烧砖
@@ -214,8 +221,11 @@ func test_fermentation() -> void:
 	var result := ReactionRegistry.evaluate_reaction(ferment, inputs, 25.0, "anaerobic", 259200.0, true)
 	assert_true(result["mass_conservation_ok"], "ferment mass conservation")
 
-	# 温度过低不发酵
-	var cold := ReactionRegistry.evaluate_reaction(ferment, inputs, 5.0, "anaerobic", 259200.0, true)
+	# 温度过低不发酵（用新鲜输入）
+	var cold := ReactionRegistry.evaluate_reaction(ferment, [
+		{"material_id": "wheat_grain", "mass_kg": 6.0},
+		{"material_id": "water", "mass_kg": 4.0}
+	], 5.0, "anaerobic", 259200.0, true)
 	assert_eq(cold["reaction_progress"], 0.0, "no fermentation at 5°C", 0.01)
 
 func test_matching() -> void:
@@ -260,3 +270,7 @@ func test_mass_conservation() -> void:
 			printerr("  mass balance FAIL: ", rxn["id"], " outputs sum to ", total_out)
 
 	assert_true(all_ok, "all reactions have mass ratio sum ≈ 1.0")
+
+	# 加载器自身的守恒校验不应报告任何违规
+	assert_true(ReactionRegistry.get_mass_balance_errors().is_empty(),
+		"no mass balance errors reported by loader")

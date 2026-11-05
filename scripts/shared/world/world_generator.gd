@@ -7,11 +7,19 @@
 class_name WorldGenerator
 extends RefCounted
 
+## Phase 1 默认世界参数（客户端/服务端/测试共用，避免各写一份）
+const DEFAULT_SEED := 42
+const DEFAULT_PLANET_RADIUS := 3978.87
+const DEFAULT_MAX_ELEVATION := 400.0
+
 ## 赛季种子
 var _seed_value: int = 0
 
+## 世界生成专用随机源（不用全局 randf，保证同种子同世界）
+var _rng := RandomNumberGenerator.new()
+
 ## 行星半径 m
-var planet_radius: float = 3978.87
+var planet_radius: float = DEFAULT_PLANET_RADIUS
 
 ## 最大海拔 m
 var max_elevation: float = 1000.0
@@ -36,16 +44,18 @@ var generation_progress: float = 0.0
 # 初始化与生成
 # ============================================================
 
-func _init(p_seed: int = 0, p_radius: float = 3978.87) -> void:
+func _init(p_seed: int = 0, p_radius: float = DEFAULT_PLANET_RADIUS) -> void:
 	_seed_value = p_seed
 	planet_radius = p_radius
 
 func generate() -> void:
-	print("WorldGenerator: Generating world (_seed_value=", _seed_value, ", R=", planet_radius, "m)...")
+	print("WorldGenerator: Generating world (R=", planet_radius, "m)...")
 
 	# 1. 地形
 	terrain = Terrain.new(planet_radius, _seed_value)
 	terrain.max_elevation = max_elevation
+	terrain.land_ratio_target = land_ratio_target
+	terrain.build()
 	generation_progress = 0.2
 
 	# 2. 矿产
@@ -60,7 +70,8 @@ func generate() -> void:
 	climate = Climate.new()
 	generation_progress = 0.7
 
-	# 5. 初始植被
+	# 5. 初始植被（独立随机源，保证同种子同森林）
+	_rng.seed = _seed_value
 	_generate_initial_vegetation()
 	generation_progress = 0.9
 
@@ -103,7 +114,7 @@ func query_world(position: Vector3) -> Dictionary:
 	result["latitude"] = lat
 
 	if climate:
-		result["temperature"] = climate.get_temperature(lat, elev)
+		result["temperature"] = get_temperature_at(position, elev)
 		result["precipitation"] = climate.get_precipitation(lat, elev)
 
 	if is_land and ore_gen:
@@ -113,6 +124,18 @@ func query_world(position: Vector3) -> Dictionary:
 		result["soil"] = soil_grid.get_soil_at(position)
 
 	return result
+
+## 某位置/海拔的温度（世界物品、气候查询共用）
+func get_temperature_at(position: Vector3, elevation: float) -> float:
+	if climate == null or terrain == null:
+		return 20.0
+	return climate.get_temperature(terrain.get_latitude(position), elevation)
+
+## 球面均匀随机方向（世界生成、物品生成共用）
+static func random_direction(rng: RandomNumberGenerator) -> Vector3:
+	var theta := rng.randf() * TAU
+	var phi := acos(2.0 * rng.randf() - 1.0)
+	return Vector3(sin(phi) * cos(theta), cos(phi), sin(phi) * sin(theta))
 
 ## 获取指定位置附近的树木列表
 func get_nearby_trees(position: Vector3, radius: float) -> Array:
@@ -152,10 +175,7 @@ func _generate_initial_vegetation() -> void:
 	tree_count = mini(tree_count, 5000)
 
 	for i in range(tree_count):
-		# 随机方向
-		var theta: float = randf() * TAU
-		var phi: float = acos(2.0 * randf() - 1.0)
-		var dir := Vector3(sin(phi) * cos(theta), cos(phi), sin(phi) * sin(theta))
+		var dir := random_direction(_rng)
 		var pos := dir * planet_radius
 
 		if not terrain.is_land(pos):
@@ -169,7 +189,7 @@ func _generate_initial_vegetation() -> void:
 
 		var tree := TreeGrowth.create_sapling(species, 0)
 		# 给予随机初始生长（模拟已有的森林）
-		var maturity: float = randf() * 0.8 + 0.1
+		var maturity: float = _rng.randf() * 0.8 + 0.1
 		var data: Dictionary = TreeGrowth.SPECIES_DATA.get(species, TreeGrowth.SPECIES_DATA["oak"])
 		tree.biomass = data["max_biomass"] * maturity * maturity
 		tree.height = data["max_height"] * maturity
@@ -189,24 +209,29 @@ func _pick_tree_species(latitude: float, elevation: float) -> String:
 		return "pine"  # 高山松
 	if abs_lat < 30:
 		return "oak"   # 热带橡木
-	if randf() < 0.3:
+	if _rng.randf() < 0.3:
 		return "birch"
-	if randf() < 0.2:
+	if _rng.randf() < 0.2:
 		return "pine"
 	return "oak"
 
 func _estimate_land_ratio() -> float:
 	if not terrain:
 		return 0.0
+	# 独立随机源，避免消耗植被 RNG 状态
+	var ratio_rng := RandomNumberGenerator.new()
+	ratio_rng.seed = _seed_value ^ 0x9E3779B9
 	var samples: int = 2000
 	var land: int = 0
 	for i in range(samples):
-		var theta: float = randf() * TAU
-		var phi: float = acos(2.0 * randf() - 1.0)
-		var dir := Vector3(sin(phi) * cos(theta), cos(phi), sin(phi) * sin(theta))
+		var dir := random_direction(ratio_rng)
 		if terrain.is_land(dir * planet_radius):
 			land += 1
 	return float(land) / float(samples)
+
+## 供世界物品生成器等外部系统使用
+func get_seed() -> int:
+	return _seed_value
 
 func _position_key(pos: Vector3) -> String:
 	return "%.1f_%.1f_%.1f" % [pos.x, pos.y, pos.z]
