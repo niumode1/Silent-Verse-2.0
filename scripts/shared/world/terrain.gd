@@ -416,6 +416,70 @@ func get_province(position: Vector3) -> Dictionary:
 	}
 
 
+## 地下 depth_m 米深处的物质组成（体积分数，总和 = 1）。
+##
+## 地下从来不是一整块均质材料：表土是腐殖质 + 黏土 + 砂粒的混合，
+## 下面是风化的砾石层，再往下是按地质省决定的基岩（花岗岩/玄武岩/
+## 板岩/砂岩-石灰岩混合）。层与层之间是 0.3 m 的渐变过渡，不是突变。
+## 返回 [{"material_id": String, "fraction": float}, ...]，由调用方
+## 用 MaterialDB + ContactResolver.composite() 折算成等效材料。
+func get_subsurface_composition(position: Vector3, depth_m: float) -> Array:
+	_ensure_built()
+	var province := get_province(position)
+	var flags: int = int(province["flags"])
+	var river: float = float(province["river"])
+	# 河谷土层更厚（冲积），坡地更薄
+	var soil_depth: float = 0.30 + 0.70 * clampf(river, 0.0, 1.0)
+
+	var w_soil: float = clampf(1.0 - (depth_m - (soil_depth - 0.15)) / 0.30,
+		0.0, 1.0)
+	var w_bedrock: float = clampf((depth_m - 2.35) / 0.30, 0.0, 1.0)
+	var w_regolith: float = clampf(1.0 - w_soil - w_bedrock, 0.0, 1.0)
+
+	var total := 0.0
+	var mix := {}
+	_add_mix(mix, "topsoil", 0.50 * w_soil)
+	_add_mix(mix, "clay", 0.30 * w_soil)
+	_add_mix(mix, "sand", 0.20 * w_soil)
+	_add_mix(mix, "clay", 0.30 * w_regolith)
+	_add_mix(mix, "sand", 0.30 * w_regolith)
+	_add_mix(mix, "gravel", 0.25 * w_regolith)
+	var bedrock := _bedrock_materials(flags)
+	_add_mix(mix, String(bedrock[0]), 0.60 * w_bedrock)
+	_add_mix(mix, String(bedrock[1]), 0.25 * w_bedrock)
+	_add_mix(mix, "gravel", 0.15 * w_bedrock)
+	for id in mix:
+		total += float(mix[id])
+	var out: Array = []
+	if total <= 0.0:
+		return out
+	for id in mix:
+		out.append({"material_id": String(id), "fraction": float(mix[id]) / total})
+	out.sort_custom(func(a, b): return float(a["fraction"]) > float(b["fraction"]))
+	return out
+
+
+func _add_mix(mix: Dictionary, id: String, amount: float) -> void:
+	if amount <= 0.0:
+		return
+	mix[id] = float(mix.get(id, 0.0)) + amount
+
+
+## 地质省 → 基岩主/次矿物组合
+func _bedrock_materials(flags: int) -> Array:
+	if flags & PROV_GRANITE:
+		return ["granite", "flint"]
+	if flags & PROV_METAMORPHIC:
+		return ["slate", "flint"]
+	if flags & PROV_VOLCANIC:
+		return ["basalt", "obsidian"]
+	if flags & PROV_SEDIMENTARY:
+		return ["limestone", "sandstone"]
+	if flags & PROV_COASTAL:
+		return ["sandstone", "gravel"]
+	return ["sandstone", "limestone"]
+
+
 func get_plate_count() -> int:
 	_ensure_built()
 	return _plates.size()
