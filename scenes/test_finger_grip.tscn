@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://tests/test_finger_grip.gd" id="1_fg"]
+
+[node name="TestRunner" type="Node"]
+script = ExtResource("1_fg")

@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://cthumbdiag001"]
+
+[ext_resource type="Script" path="res://tests/test_thumb_opposition.gd" id="1"]
+
+[node name="ThumbOpposition" type="Node"]
+script = ExtResource("1")
