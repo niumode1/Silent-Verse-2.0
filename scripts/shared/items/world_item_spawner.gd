@@ -196,7 +196,10 @@ static func _make_ore(item_id: int, material_id: String, richness: float, surfac
 static func _make_log(item_id: int, material_id: String, surface: Vector3,
 		dir: Vector3, elevation: float, rng: RandomNumberGenerator, world: WorldGenerator) -> ItemEntity:
 	var length := rng.randf_range(1.0, 2.0)
-	var diameter := rng.randf_range(0.07, 0.16)
+	# 树下的落枝：够粗才能当棍使、能撬、能当柴。
+	# 超过 6 cm 的落枝手指就圈不住了（合拢的指骨围出的口袋只有
+	# 3-4 cm 见方），只能拖着走或者用绳子捆——但那由玩家自己决定。
+	var diameter := rng.randf_range(0.030, 0.065)
 
 	# 倒木水平躺在地表：局部 Y = 木轴（切向），局部 Z = 地表法线
 	var axis := _random_tangent(dir, rng)
