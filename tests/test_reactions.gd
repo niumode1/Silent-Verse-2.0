@@ -1,7 +1,8 @@
 # ============================================================
 # test_reactions.gd — 化学反应系统单元测试
 # ============================================================
-# 运行: godot --headless --script tests/test_reactions.gd
+# 运行: godot --headless --path . scenes/test_reactions.tscn
+# （必须走场景，--script 模式不加载 autoload，MaterialDB 不存在）
 # ============================================================
 extends Node
 
