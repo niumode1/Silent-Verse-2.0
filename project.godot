@@ -99,6 +99,15 @@ inventory={
 
 3d/run_on_separate_thread=true
 3d/physics_engine="JoltPhysics3D"
+jolt_physics_3d/simulation/velocity_steps=24
+jolt_physics_3d/simulation/penetration_slop=0.0005
+; penetration_slop 是允许的穿透量，不是把接触「调软」的旋钮。调到
+; 3 mm 时 0.58 kg 木棍的滑脱从 4 m 降到 0.11 m，但同一套参数下
+; 0.10 kg 的木棍又会在两次运行间一次握住一次被甩飞——握持稳定性
+; 对它是混沌的，不能靠它救。0.5 mm 是骨骼/自身碰撞/物品那批测试
+; 一直在用的值。
+
+jolt_physics_3d/simulation/speculative_contact_distance=0.004
 
 [rendering]
 
