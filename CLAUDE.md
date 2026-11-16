@@ -15,9 +15,9 @@
 
 | 层面 | 选型 | 理由 |
 |---|---|---|
-| 客户端引擎 | Godot 4.6.3 | 原生导出 Win/Android/iOS/macOS，一套代码 |
-| 服务端 | Godot 4.6.3 Headless | 与客户端共享物理/逻辑代码，零同步成本 |
-| 物理引擎 | Jolt Physics（Godot 4.6.3 内置） | 确定性物理，跨平台一致 |
+| 客户端引擎 | Godot 4.7.2 | 原生导出 Win/Android/iOS/macOS，一套代码 |
+| 服务端 | Godot 4.7.2 Headless | 与客户端共享物理/逻辑代码，零同步成本 |
+| 物理引擎 | Jolt Physics（Godot 4.7.2 内置） | 确定性物理，跨平台一致 |
 | 网络 | ENet（Godot 内置 UDP） | 低延迟，无需额外依赖 |
 | 语音 | WebRTC P2P | 范围语音不占服务器带宽 |
 | 持久化 | JSON 文件（Phase 1） | 零依赖，FileAccess 直接读写，50 人足够 |
@@ -137,7 +137,7 @@
 
 ```
 Silent Verse 2.0/
-├── project.godot                  # Godot 4.6.3 项目文件
+├── project.godot                  # Godot 4.7.2 项目文件
 ├── scripts/
 │   ├── shared/                    # 客户端 & 服务端共享
 │   │   ├── physics/
