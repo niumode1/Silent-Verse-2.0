@@ -20,21 +20,24 @@
 #   TABLE=0 HOVER 未设  冻结木棍。解冻那一帧会把指腹压进去的穿透一次性
 #                   弹开（实测 1.3 m/s），只用于对照，不可作为判据。
 #
-# 判据：撤掉支撑后木棍相对手掌的位移 < 8 cm，且最后一帧仍在接触中。
+# 判据：撤掉支撑后木棍相对手掌的位移 < 8 cm，且最后一帧仍有接触
+#      （骨骼硬接触或指腹软组织接触都算）。
 #
-# 实测状态（penetration_slop=0.5 mm，桌面方案）：
-#   单次结果从「握住，位移 1.5-3.6 cm、末速 < 0.05 m/s」到「被挤出掌心、
-#   滑出 1-5 m」都有，同一份代码连跑三次通过 1-3 次。这不是肌肉不够力
-#   ——合拢时指腹对木棍的接触力实测 50-400 N，是一根 0.10 kg 木棍重量的
-#   50-400 倍。病根在接触模型：刚性指骨 + 硬接触会把木棍当瓜子一样楔出去，
-#   真实指腹有 3-5 mm 可压缩软组织。试过的替代方案都没救回来：
-#     penetration_slop 3 mm → 0.58 kg 从滑出 4 m 降到 0.11 m，但 0.10 kg
-#       同一参数下两次运行一次握住一次甩飞；5 mm 反而更差。
-#     baumgarte 0.1 → 三次全滑出。
-#     motor max_impulse ×60 → 挤出得更狠（4.4 m → 7.5 m），说明是指骨在
-#       把木棍顶出去，不是力气不够。
-#   正解是给指尖加一层柔性接触（可压缩指腹），不是继续调求解器参数。
-#   在此之前，这个测试的作用是**如实报出滑脱距离**，不是装绿灯。
+# 实测状态（2026-11-16，Godot 4.7.2，桌面方案）：
+#   修好指腹软组织层之后，默认木棍（Ø3.2 cm / 0.30 m / 0.10 kg）连跑
+#   11 次全部握住：位移 1.5-5.8 cm，末速 ≤0.25 m/s，指腹全程有接触。
+#   修之前同一份测试三次只通过一次，另两次被挤出掌心、滑出 3-5 m。
+#   病因是接触模型：9 mm 刚性胶囊 + 硬接触是单点接触，手指继续收拢时
+#   把木棍当瓜子顶出去。现在指骨缩到 5 mm，外面 4 mm 指腹用分布弹簧-
+#   阻尼层（first_person_controller.gd 的 _build_pulp_samples /
+#   _update_finger_pads），接触压力摊在整个指腹面上。试过、没用的
+#   替代方案（留着免得再走一遍）：
+#     penetration_slop 3 mm → 0.58 kg 好转，但 0.10 kg 一次握住一次甩飞
+#     baumgarte 0.1 → 三次全滑出
+#     motor max_impulse ×60 → 挤得更狠（4.4 m → 7.5 m），说明不是力气问题
+#   仍然握不住的：Ø3.5 cm × 1.0 m 的木棍超过 0.35 kg 就滑脱（0.45 kg
+#   滑出 0.43 m，0.58 kg 直接飞 3-5 m）。世界里的树枝多数比这重，
+#   瓶颈已经不是接触模型，而是拇指根位置（HANDOFF §5.3）和手掌承重。
 #
 # 手指力矩由 PlayerBody 的肌力 × 解剖力臂给出，不允许在这里写死抓握力。
 # ============================================================
@@ -119,7 +122,8 @@ func _set_fingers(per_joint: bool, frac: float = 1.0) -> void:
 		# NO_THUMB：把拇指留在张开位，单独看四指能不能握住。
 		if f == 0 and OS.get_environment("NO_THUMB") != "":
 			continue
-		for j in range(3):
+		# 拇指只有 2 节（CMC + MCP），不能按四指的 3 节写死
+		for j in range((angles[1][f] as Array).size()):
 			angles[1][f][j] = float(GRASP_DEG[j]) * frac if per_joint else 0.0
 			# 用墙钟毫秒表示「这一帧肌肉是主动的」。给足余量：headless
 			# 下物理可能比实时慢，800 ms 只覆盖几十帧，合拢还没结束
@@ -314,6 +318,10 @@ func _spawn_stick() -> void:
 	_stick.continuous_cd = false
 	_stick.collision_layer = 1
 	_stick.collision_mask = 15
+	# _stick_debug 用 get_colliding_bodies() 报接触对象；不打开接触监控
+	# 时引擎每帧报 "Parameter contact_monitor is null"
+	_stick.contact_monitor = true
+	_stick.max_contacts_reported = 8
 	var mat := PhysicsMaterial.new()
 	mat.friction = 0.8
 	mat.bounce = 0.0
@@ -398,7 +406,7 @@ func _report_spawn_clearance() -> void:
 	var worst := 99.0
 	var worst_name := ""
 	for f in range(5):
-		for j in range(3):
+		for j in range((segs[f] as Array).size()):
 			var seg: Node3D = segs[f][j]
 			var seg_dir: Vector3 = (seg.global_transform.basis
 				* Vector3(0, 0, -1)).normalized()
@@ -431,7 +439,7 @@ func _dump_hand(tag: String) -> void:
 	for f in range(5):
 		var parts := []
 		var angs := []
-		for j in range(3):
+		for j in range((segs[f] as Array).size()):
 			var seg: Node3D = segs[f][j]
 			var pl: Vector3 = inv * seg.global_position
 			var dl: Vector3 = (inv.basis
@@ -528,7 +536,7 @@ func _contact_detail() -> String:
 	var segs: Array = _controller.get("_finger_segments")[1]
 	var inv: Transform3D = _palm.global_transform.affine_inverse()
 	for f in range(5):
-		for j in range(3):
+		for j in range((segs[f] as Array).size()):
 			var body = segs[f][j]
 			if body == null or body.get("contact_body") != _stick:
 				continue
@@ -545,7 +553,7 @@ func _contact_forces() -> String:
 	var out := []
 	var segs: Array = _controller.get("_finger_segments")[1]
 	for f in range(5):
-		for j in range(3):
+		for j in range((segs[f] as Array).size()):
 			var body = segs[f][j]
 			if body == null:
 				continue
@@ -555,16 +563,25 @@ func _contact_forces() -> String:
 	return "[" + ", ".join(out) + "]"
 
 
+## 指腹软组织托住物体时，硬胶囊可能完全没碰到它（两者差 3-4 mm），
+## 只看硬接触会误判成「松手了」。
+func _pulp_touching() -> bool:
+	var touch: Array = _controller.get("_pulp_touch")
+	if touch.size() < 2 or _stick == null:
+		return false
+	return (touch[1] as Dictionary).has(_stick.get_instance_id())
+
+
 func _report() -> void:
 	var rel: Vector3 = _palm.global_transform.affine_inverse() \
 		* _stick.global_position
 	var moved: float = rel.distance_to(_stick_local_at_grab)
 	var speed: float = _stick.linear_velocity.length()
-	var touching: bool = _contact_forces() != "[]"
+	var touching: bool = _contact_forces() != "[]" or _pulp_touching()
 	print("[Finger Grip] 棍 Ø%.1f cm / %.2f m / %.2f kg" % [
 		STICK_R * 200.0, STICK_LEN, STICK_MASS])
-	print("[Finger Grip] 松手后相对手掌位移=%.3f m 末速=%.3f m/s 接触=%s" % [
-		moved, speed, _contact_forces()])
+	print("[Finger Grip] 松手后相对手掌位移=%.3f m 末速=%.3f m/s 骨骼接触=%s 指腹接触=%s" % [
+		moved, speed, _contact_forces(), str(_pulp_touching())])
 	# 判据只看「有没有掉出去」：自由落体两秒会走 19.6 m，而握持中
 	# 手指继续收拢会把木棍往掌心里带几厘米，速度也常有几个 cm/s
 	# 的蠕动。所以只要它还在手边、还有接触、速度远低于坠落，就算握住。

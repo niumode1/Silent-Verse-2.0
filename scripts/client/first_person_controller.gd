@@ -58,6 +58,13 @@ var _selected_arm_joint: int = 0
 var _finger_seg_lengths: Array = []   # [hand][finger] = [prox_len, mid_len, dist_len]
 var _palm_bodies: Array = []          # [hand] RigidBody3D 手掌（腕关节末端）
 var _finger_segments: Array = []      # [hand][finger] = [RigidBody3D x3]
+## [hand][finger][seg] = [{"p": 指腹采样点(骨局部坐标), "n": 指腹法线(骨局部)}]。
+## 指骨是 5 mm 硬骨，外面还有 4 mm 可压缩的指腹软组织，见 [_update_finger_pads]。
+var _pulp_pads: Array = []
+## [hand] = {body_instance_id: true}：上一物理步被指腹软组织顶到的物体。
+## 指腹把物体托住时硬胶囊可能完全没碰到它（差 3-4 mm），只看硬接触
+## 会误判成「没握住」，所以接触判定要能查到这里。
+var _pulp_touch: Array = []
 var _finger_joints: Array = []        # [hand][finger] = [HingeJoint3D x3]
 ## [hand][finger][joint] = 屈曲轴在**父刚体局部坐标**里的固定向量。
 ## 关节的轴在建立约束那一刻就固化在两侧刚体的局部系里，运行时
@@ -911,11 +918,31 @@ const FINGER_EXTENSOR_RATIO := 0.35
 ## 1.7 N·m，和肌肉同级；超限 20° 出 7 N·m，任何握力都压不过去。
 const FINGER_STOP_STIFFNESS := 5.0
 const FINGER_STOP_DAMPING := 0.1
+## 指骨半径与皮肉半径。指骨是硬接触（刚体胶囊），外面的皮下脂肪 +
+## 真皮是可压缩层：真人指腹 3-5 mm 厚，压陷 1 mm 约需 0.5-1 N，
+## 压陷 3 mm 约 5-15 N——正好是一只手的握力量级。
+const FINGER_BONE_RADIUS := 0.005
+const FINGER_FLESH_RADIUS := 0.009
+## 指腹软组织的等效厚度与整节指骨的等效压缩刚度（N/m）。
+## 刚度不是抓取力：它只描述「指腹被压进去多少、顶回来多少」，
+## 握力仍然只来自肌力 × 力臂。
+const PULP_THICKNESS := 0.004
+const PULP_STIFFNESS := 2600.0
+const PULP_DAMPING := 14.0
+## 皮肉对接触物体的切向摩擦系数（干燥皮肤 - 木/骨面量级）
+const PULP_FRICTION := 1.1
+## 切向摩擦的粘性系数（N·s/m）：只用来在没有相对滑动时给出静摩擦
+## 的「预压量」，超过 μ·Fn 就饱和成库仑摩擦。取大值是为了让
+## 慢速滑动（几 cm/s）也能拿到接近 μ·Fn 的摩擦力——否则物体沿指腹
+## 慢慢往下溜时，粘性项太小，握持会像涂了油。
+const PULP_TANGENT_DAMPING := 300.0
 
 
 func _build_hand_physics() -> void:
 	_palm_bodies.clear()
 	_finger_segments.clear()
+	_pulp_pads.clear()
+	_pulp_touch.clear()
 	_finger_joints.clear()
 	_finger_axis_local.clear()
 	_finger_ref_local.clear()
@@ -1457,6 +1484,9 @@ func _build_fingers_for_hand(h: int, palm: RigidBody3D) -> void:
 	var hand_segments: Array = []
 	# 先把本手容器挂进去，循环内才能回头引用已建好的相邻指骨
 	_finger_segments.append(hand_segments)
+	var hand_pads: Array = []
+	_pulp_pads.append(hand_pads)
+	_pulp_touch.append({})
 	var finger_actives: Array = []
 	_finger_active_until.append(finger_actives)
 	var hand_broken: Array = []
@@ -1472,6 +1502,8 @@ func _build_fingers_for_hand(h: int, palm: RigidBody3D) -> void:
 		hand_broken.append(_bools(joint_count))
 		# 先挂容器，j>0 时才能引用同一根手指的上一节
 		hand_segments.append(finger_segments)
+		var finger_pads: Array = []
+		hand_pads.append(finger_pads)
 		for j in range(joint_count):
 			var pivot: Node3D = _finger_pivots[h][f][j]
 			var seg_len: float = float(_finger_seg_lengths[h][f][j])
@@ -1509,13 +1541,17 @@ func _build_fingers_for_hand(h: int, palm: RigidBody3D) -> void:
 			# 整根手指连续扫掠，避免关节处露出分段。
 			var col := CollisionShape3D.new()
 			var shape := CapsuleShape3D.new()
-			shape.radius = 0.009
+			# 硬接触只到骨面（5 mm）；外面 4 mm 的指腹由
+			# [_update_finger_pads] 的分布弹簧层负责。
+			shape.radius = FINGER_BONE_RADIUS
 			shape.height = seg_len
 			col.shape = shape
 			col.rotation.x = PI * 0.5
 			seg.add_child(col)
 
 			finger_segments.append(seg)
+			finger_pads.append(_build_pulp_samples(h, seg_len, basis,
+				j == joint_count - 1))
 
 	var hand_joints: Array = []
 	# 同上，先挂容器再填充
@@ -1650,6 +1686,128 @@ func _update_finger_muscles(h: int, palm: RigidBody3D, fore: RigidBody3D,
 			joint.set_flag(HingeJoint3D.FLAG_ENABLE_MOTOR, true)
 			_apply_finger_muscle(h, f, j, palm, fore, torque, target_deg,
 				limit_deg, dt)
+	# 肌力矩下完之后再上指腹：软组织力是接触力，和肌肉是两条独立的
+	# 传力路径（肌肉拉骨，指腹被物体压回去）。
+	_update_finger_pads(h)
+
+
+## 指腹采样点：沿指骨长度取 4 站、掌侧 ±46° 取 3 条，共 12 个点。
+## 每个点是骨面外侧、即皮肉表面的位置，和它向外的法线。运行时每个点
+## 各撑一根弹簧：物体压进哪几个点，反力就分布在哪个面上，而不是像
+## 硬胶囊那样只压在一条接触线上。
+func _build_pulp_samples(h: int, seg_len: float,
+		basis: Basis, is_tip: bool = false) -> Array:
+	var palmar := Vector3.ZERO
+	if h < _hand_roots.size():
+		# 掌侧 = 手掌根节点的 -y：四指与拇指的指腹都朝这一侧
+		palmar = -(_hand_roots[h].global_transform.basis.y).normalized()
+	var axis := basis.z.normalized()
+	var n_world: Vector3 = palmar - axis * palmar.dot(axis)
+	if n_world.length() < 0.05:
+		# 指骨与掌侧向量平行时（四指在掌前缘直伸），退回到关节屈曲
+		# 平面里的掌侧方向
+		n_world = -basis.y.normalized()
+	n_world = n_world.normalized()
+	var n_local: Vector3 = (basis.inverse() * n_world).normalized()
+	var out: Array = []
+	for t in [-0.45, -0.15, 0.15, 0.45]:
+		var z: float = seg_len * float(t)
+		for a in [-0.8, 0.0, 0.8]:
+			var dir: Vector3 = n_local.rotated(Vector3.BACK, float(a)).normalized()
+			out.append({
+				"p": dir * FINGER_BONE_RADIUS + Vector3(0.0, 0.0, z),
+				"n": dir,
+			})
+	if is_tip:
+		# 末节远端是半球（骨头自己的胶囊端帽）。物体被手指卷到指尖
+		# 外侧时，接触发生在这一圈，只取沿骨轴的采样点会漏掉。
+		var tip_center := Vector3(0.0, 0.0, -seg_len * 0.5)
+		for a in [-0.6, 0.0, 0.6]:
+			var d: Vector3 = (Vector3(0.0, 0.0, -1.0)
+				+ n_local.rotated(Vector3.BACK, float(a))).normalized()
+			out.append({"p": tip_center + d * FINGER_BONE_RADIUS, "n": d})
+	return out
+
+
+## 指腹软组织接触层。
+##
+## 为什么不用硬接触：9 mm 刚性胶囊压在一根圆柱上，接触是单点（求解器
+## 里是 1-2 个接触点），继续收拢时指尖像楔子一样把物体从掌心里顶出去
+## （test_finger_grip 实测 0.10 kg 木棍被甩飞 3-5 m）。真实指腹有 3-5 mm
+## 皮下脂肪，压力摊在整个指腹面上，接触合力矩把物体往掌心里带。
+##
+## 这里每个采样点是一根单侧弹簧-阻尼：物体压进皮肉多少就顶回多少，
+## 力作用在真实接触点上（因此会自动产生绕关节的力矩）。力的大小由
+## 软组织刚度决定；指腹只能推、不能拉，所以是单侧的。
+func _update_finger_pads(h: int) -> void:
+	if h >= _pulp_pads.size() or h >= _finger_segments.size():
+		return
+	var space := get_world_3d().direct_space_state
+	if space == null:
+		return
+	if h < _pulp_touch.size():
+		(_pulp_touch[h] as Dictionary).clear()
+	for f in range(5):
+		if f >= (_pulp_pads[h] as Array).size():
+			continue
+		for j in range((_pulp_pads[h][f] as Array).size()):
+			if h < _finger_broken.size() and f < _finger_broken[h].size() \
+					and bool(_finger_broken[h][f][j]):
+				continue  # 断开的骨节没有肌肉带着，也没有指腹了
+			var pts: Array = _pulp_pads[h][f][j]
+			if pts.is_empty():
+				continue
+			var seg: RigidBody3D = _finger_segments[h][f][j]
+			# 整节指骨的刚度平均摊到各采样点
+			var k: float = PULP_STIFFNESS / float(pts.size())
+			var c: float = PULP_DAMPING / float(pts.size())
+			var xf := seg.global_transform
+			for pt in pts:
+				var p_world: Vector3 = xf * (pt["p"] as Vector3)
+				var n_world: Vector3 = (xf.basis * (pt["n"] as Vector3)).normalized()
+				# 从皮肉面外侧朝骨面打一条短射线：只关心物体有没有
+				# 压进这 4 mm 的软组织层。
+				var q := PhysicsRayQueryParameters3D.create(
+					p_world + n_world * PULP_THICKNESS,
+					p_world - n_world * 0.002, 1)
+				q.exclude = [seg.get_rid()]
+				var hit: Dictionary = space.intersect_ray(q)
+				if hit.is_empty():
+					continue
+				var hp: Vector3 = hit["position"]
+				var depth: float = PULP_THICKNESS - (hp - p_world).dot(n_world)
+				if depth <= 0.0:
+					continue
+				depth = minf(depth, PULP_THICKNESS + 0.003)
+				var off_seg: Vector3 = hp - seg.global_position
+				var v_seg: Vector3 = seg.linear_velocity \
+					+ seg.angular_velocity.cross(off_seg)
+				var other := hit["collider"] as RigidBody3D
+				var v_other := Vector3.ZERO
+				var off_other := Vector3.ZERO
+				if other != null:
+					off_other = hp - other.global_position
+					if not other.freeze:
+						v_other = other.linear_velocity \
+							+ other.angular_velocity.cross(off_other)
+				var rel: Vector3 = v_other - v_seg
+				var vn: float = rel.dot(n_world)
+				var fn: float = k * depth + c * maxf(-vn, 0.0)
+				# 一点指腹压到极限也就几十牛；上界防止采样点插进
+				# 几何内部时给出天文数字把物体弹飞
+				fn = clampf(fn, 0.0, 250.0)
+				var vt: Vector3 = rel - n_world * vn
+				var ft := Vector3.ZERO
+				if vt.length() > 1e-4:
+					ft = -vt.normalized() * minf(PULP_FRICTION * fn,
+						vt.length() * PULP_TANGENT_DAMPING)
+				var force: Vector3 = n_world * fn + ft
+				seg.apply_force(-force, off_seg)
+				if other != null:
+					if h < _pulp_touch.size():
+						(_pulp_touch[h] as Dictionary)[other.get_instance_id()] = true
+					if not other.freeze:
+						other.apply_force(force, off_other)
 
 
 func _update_hand_physics() -> void:
