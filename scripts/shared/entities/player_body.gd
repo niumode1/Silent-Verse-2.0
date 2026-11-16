@@ -41,13 +41,13 @@ extends Resource
 # ============================================================
 
 ## 当前最大力量输出 N
-@export var current_strength: float = 300.0
+@export var current_strength: float = 420.0
 
 ## 基础最大力量（未经锻炼）N
-@export var base_strength: float = 300.0
+@export var base_strength: float = 420.0
 
 ## 最大可达到的力量 N（先天上限）
-@export var max_strength: float = 400.0
+@export var max_strength: float = 588.0
 
 ## 当前最大耐力（可连续劳动时间）s
 @export var current_stamina: float = 600.0
@@ -99,6 +99,30 @@ extends Resource
 ## 免疫低下 0-1
 @export var immune_deficiency: float = 0.0
 
+## 骨质疏松 0-1（缺钙/代谢疾病）。骨吸收先从内壁开始：骨皮质变薄、
+## 密度下降，但外径几乎不变。属于「轻微改变部分骨属性」，不是换材料。
+@export var osteoporosis: float = 0.0
+
+# ============================================================
+# 骨骼材料属性
+# ============================================================
+# 骨头不是不可破坏的运动学约束，而是一根有真实材料属性的承力梁：
+# 皮质骨密度 ~1900 kg/m³、抗拉 ~130 MPa、抗压 ~180 MPa、
+# 弹性模量 ~17 GPa。载荷超过截面抗弯极限就在受力点断裂。
+
+const BONE_DENSITY := 1900.0               # kg/m³
+const BONE_TENSILE_STRENGTH := 130.0e6     # Pa
+const BONE_COMPRESSIVE_STRENGTH := 180.0e6 # Pa
+const BONE_ELASTIC_MODULUS := 17.0e9       # Pa
+
+## 各骨段的骨皮质外径/内径 (m)，真实解剖量级
+const BONE_SECTIONS := {
+	"humerus": {"outer": 0.025, "inner": 0.016},     # 肱骨
+	"radius_ulna": {"outer": 0.019, "inner": 0.012}, # 桡尺骨
+	"metacarpal": {"outer": 0.008, "inner": 0.005},  # 掌骨
+	"phalanx": {"outer": 0.0065, "inner": 0.004},    # 指骨
+}
+
 # ============================================================
 # 初始化 / 投胎随机
 # ============================================================
@@ -119,7 +143,7 @@ func roll_innate_traits() -> void:
 	height = 1.70 * rng.randf_range(0.92, 1.08)
 
 	# 根据体格计算力量
-	base_strength = 300.0 * physique
+	base_strength = 420.0 * physique
 	max_strength = base_strength * 1.4
 	current_strength = base_strength
 
@@ -132,6 +156,7 @@ func roll_innate_traits() -> void:
 	joint_fragility = _roll_disease(rng, 0.02)
 	metabolic_disorder = _roll_disease(rng, 0.02)
 	immune_deficiency = _roll_disease(rng, 0.02)
+	osteoporosis = _roll_disease(rng, 0.05)
 
 	# 技能归零
 	skill_chopping = 0.0
@@ -161,6 +186,59 @@ func _roll_disease(rng: RandomNumberGenerator, probability: float) -> float:
 func get_max_force() -> float:
 	var force: float = current_strength * (1.0 - joint_fragility * 0.5)
 	return maxf(force, 50.0)
+
+# ============================================================
+# 关节力矩（肌肉支撑力）
+# ============================================================
+# 肌肉对关节的力矩 = 肌力 × 力臂。力臂是人体解剖几何常数，
+# 不是玩法数值：肩 ~0.25 m、肘 ~0.18 m、腕 ~0.033 m，
+# 指间关节 2-4 mm。肌力本身由 PlayerBody 的锻炼系统决定。
+const JOINT_MOMENT_ARMS := {
+	"shoulder": 0.25,     # m
+	"elbow": 0.18,        # m
+	"wrist": 0.033,       # m
+	"finger_mcp": 0.004,  # m
+	"finger_pip": 0.003,  # m
+	"finger_dip": 0.002,  # m
+}
+
+## 不主动发力时肌肉维持姿势的静力支撑占比（肌紧张/姿态反射）。
+## 健康成人的姿态性共激活约为最大随意收缩的 40-60%；低于这个值，
+## 连自然行走的惯性都会让手臂乱甩。超过这个力矩的外载仍会把关节
+## 压弯，玩家必须主动发力才能顶住。
+const PASSIVE_SUPPORT_RATIO := 0.5
+
+## 某一关节当前能输出的最大力矩 N·m
+func get_joint_max_torque(joint: String) -> float:
+	return get_max_force() * float(JOINT_MOMENT_ARMS.get(joint, 0.0))
+
+## 不主动控制时该关节的支撑力矩 N·m
+func get_joint_passive_torque(joint: String) -> float:
+	return get_joint_max_torque(joint) * PASSIVE_SUPPORT_RATIO
+
+# ============================================================
+# 骨骼力学
+# ============================================================
+
+## 骨质疏松后的骨截面 (m)。骨吸收主要发生内壁：外径略缩、内径扩大。
+func get_bone_section(bone: String) -> Dictionary:
+	var sec: Dictionary = BONE_SECTIONS.get(bone, BONE_SECTIONS["phalanx"])
+	var severity: float = clampf(osteoporosis, 0.0, 1.0)
+	return {
+		"outer": float(sec["outer"]) * (1.0 - 0.05 * severity),
+		"inner": float(sec["inner"]) * (1.0 + 0.20 * severity),
+	}
+
+## 该骨段在弯曲载荷下的断裂力矩 N·m。
+## 抗弯截面模量 W = π(D⁴-d⁴)/(32D)，断裂条件 M > σ·W。
+## 骨质疏松只轻微降低抗拉强度，主要靠骨皮质变薄降低 W。
+func get_bone_fracture_moment(bone: String) -> float:
+	var sec := get_bone_section(bone)
+	var outer: float = sec["outer"]
+	var inner: float = sec["inner"]
+	var w: float = PI * (pow(outer, 4.0) - pow(inner, 4.0)) / (32.0 * outer)
+	var strength: float = BONE_TENSILE_STRENGTH * (1.0 - 0.15 * clampf(osteoporosis, 0.0, 1.0))
+	return strength * w
 
 ## 获取当前最大负重 kg（长期携带）
 func get_carry_capacity() -> float:
