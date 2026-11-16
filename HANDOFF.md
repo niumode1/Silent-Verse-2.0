@@ -11,24 +11,40 @@
 
 | 项 | 值 |
 |---|---|
-| 引擎 | Godot **4.6.3**（本机是 `.mono` 构建，非 mono 也应当能跑） |
-| 本机二进制 | `/home/niumo/bin/godot/godot` |
+| 引擎 | Godot **4.7.2**（升级到 4.7 后，4.6 的 `.mono` 构建不再使用） |
+| 本机二进制 | `I:\godot\Godot_v4.7.2-stable_win64.exe` |
 | 主场景 | `scenes/client_3d.tscn` |
 | 物理引擎 | Jolt Physics（`project.godot` 里 `3d/physics_engine="JoltPhysics3D"`） |
 
-`project.godot` 里 `config/features` 必须是 `"4.6"`。用 4.7 的编辑器打开会把它自动改成
-`"4.7"`，提交前检查一下。`.godot/` 已 gitignore，新机器首次打开编辑器会重新导入，等它跑完。
+`project.godot` 里 `config/features` 现在是 `"4.7"`，用 4.7 打开不会再改写。但要注意
+**4.6 → 4.7 的升级改写是有损的**：它会把 `penetration_slop` 上方那段注释整块删掉，
+升级或换引擎后先 `git diff project.godot` 核对。
+
+`.godot/` 已 gitignore。**新机器 / 换引擎版本后，第一次跑测试前必须先重建类缓存**：
+
+```
+<godot> --headless --editor --quit --path .
+```
+
+否则 `global_script_class_cache.cfg` 是旧的，所有依赖 `class_name` 的测试会报
+`Identifier "X" not declared` / `Parse Error` 的假失败（2026-11-16 实测踩过）。
 
 ---
 
 ## 2. 跑测试
 
-**关键坑：`physics/3d/run_on_separate_thread=true` 让 Godot 退出时挂住不返回。**
-所以每条命令都必须包 `timeout -s KILL`，**退出码 124 是正常的**，结果看 stdout。
+**关键坑：`physics/3d/run_on_separate_thread=true` 让加载了 3D 物理的场景在退出时挂住不返回。**
+纯计算场景（如 `test_contact_resolver`）能正常退出，`test_physics`、`test_physical_hand`、
+`test_world`、`test_world_items` 会挂住。所以每条命令都必须带超时杀进程，结果只看 stdout。
 
-```bash
-GODOT=/home/niumo/bin/godot/godot          # 换机器改这里
-run() { timeout -s KILL 240 "$GODOT" --headless --path . "scenes/$1.tscn"; }
+```powershell
+$GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
+$PROJ  = "H:\Silent Verse 2.0"        # 路径含空格，传给引擎时必须带引号
+function run($name) {
+    $p = Start-Process $GODOT -PassThru -NoNewWindow `
+        -ArgumentList "--headless --path `"$PROJ`" scenes/$name.tscn"
+    if (-not $p.WaitForExit(240000)) { $p.Kill() }
+}
 
 run test_physics          # 64/64
 run test_reactions        # 31/31
@@ -39,12 +55,12 @@ run test_world            # 玩法系统集成（打印式，无 PASS 计数）
 run test_scene            # autoload/材料库自检（打印式）
 ```
 
-物理手相关（每个 1-4 分钟，需要真实物理步进）：
+物理手相关（2026-11-16 在 Windows + 4.7.2 上实测每个 2–17 秒）：
 
-```bash
+```powershell
 run test_physical_hand    # 4/4  手部刚体与关节
 run test_self_collision   # PASS 手脚与自身正常碰撞，无例外
-run test_shoulder_rig     # PASS 肩关节行程 139.4°
+run test_shoulder_rig     # PASS 肩关节行程 140.9°
 run test_arm_lift         # PASS 抬臂
 run test_arm_load         # PASS 负重
 run test_arm_walk         # PASS 行走时手臂摆动
@@ -53,11 +69,11 @@ run test_arm_fracture     # PASS 骨骼断裂 + 皮肉重建耗时
 run test_finger_limit     # PASS 指关节限位
 run test_thumb_opposition # 打印式：拇指 0/30/60/90° 的指尖轨迹
 run test_item_fallback    # PASS 物品掉穿地形回位
-run test_finger_grip      # 2/3 **FAIL（已知问题，见 §5.1）**
+run test_finger_grip      # PASS 指腹软组织层能握住 Ø3.2 cm 木棍（§5.1）
 ```
 
 `test_arm_fracture` 支持 `FRACTURE_MODE=finger` 环境变量：
-`FRACTURE_MODE=finger run test_arm_fracture` 只断右手食指中节。
+`$env:FRACTURE_MODE="finger"; run test_arm_fracture` 只断右手食指中节。
 
 `tests/test_reactions.gd` 曾经在注释里写 `--script tests/test_reactions.gd`，
 **那样跑不起来**（`--script` 模式不加载 autoload，编译期就找不到 MaterialDB）。
@@ -74,6 +90,10 @@ run test_finger_grip      # 2/3 **FAIL（已知问题，见 §5.1）**
 | ✅ 完成并测试通过 | P1.1–P1.13：项目骨架、PhysicsConstants、MaterialProperty、materials.json（**70 种**，要求 ≥50）、MaterialDB、PhysicsCalc（64 条公式测试）、ReactionSystem（**26 个反应 / 6 类**，要求 ≥15，全部质量守恒）、PlayerBody/AnimalBody/OfflineEntity、单元测试、ENet 网络层、权威验证、客户端输入 |
 | ⚠️ 声称完成、本次未复核 | P1.14 两人联机跑完整冶炼循环、P1.15 50 人压测。`85694e2` 提交信息说做了，但此后工作区改动很大（物理手整套），没有重跑 |
 | — | 服务端权威分端 / 流式下发：按 CLAUDE.md 的 Phase 1 策略**故意延后**，当前客户端本地确定性生成世界 |
+
+2026-11-16 在 Windows + Godot 4.7.2 上把上面 21 个测试场景全量重跑了一遍：
+单元类与物理手/手臂类全部通过。当天下午给指骨加了指腹软组织接触层之后
+`test_finger_grip` 也转为通过（§5.1）。4.7 没有引入回归。
 
 ### 超出原 SPEC 范围、当前主攻
 
@@ -107,6 +127,8 @@ run test_finger_grip      # 2/3 **FAIL（已知问题，见 §5.1）**
 | `_build_fingers_on_hand(hand_root, h, skin)` | 建手指的视觉/基座（拇指根几何在这里） |
 | `_finger_flex_deg(h, f, j)` | 量某个关节的屈曲角（肌肉反馈用） |
 | `_update_finger_muscles(...)` | 每帧给指关节电机下达力矩 |
+| `_build_pulp_samples(...)` | 建一节指骨的指腹采样点（12-15 个） |
+| `_update_finger_pads(h)` | 每帧把指腹软组织力施加到手指和物体上 |
 | `_update_bone_fractures(sky, g)` | 每帧扫描骨段载荷 |
 | `_break_bone(c)` | 执行断裂：切铰链、放开骨节 |
 | `_rebuild_body_skin()` | 每帧重扫皮肉网格 |
@@ -119,17 +141,33 @@ run test_finger_grip      # 2/3 **FAIL（已知问题，见 §5.1）**
 
 ## 5. 已知问题（按优先级）
 
-### 5.1 握持不稳定 —— `test_finger_grip` 2/3 失败
+### 5.1 握持不稳定 —— 接触模型已修，大树枝仍握不住
 
-木棍有时能握住，有时被指尖弹出掌心。`NO_THUMB=1` 也会失败，所以不是拇指的问题。
-根因：**刚性指尖胶囊 + 硬接触**，接触力集中在一点，指尖互相把木棍楔出去。
+旧症状：木棍有时能握住，有时被指尖弹出掌心（同一份代码连跑三次只过一两次）。
+根因：**刚性指尖胶囊 + 硬接触**是单点接触，手指继续收拢时把木棍像瓜子一样楔出去。
+调 `penetration_slop` / `baumgarte` / 马达力矩都救不回来。
 
-调 Jolt 的 `penetration_slop` 能改善某一件物品、又让另一件变坏：
-0.10 kg 木棍两次运行一次握住一次被甩飞——对参数是混沌的。
+2026-11-16 实现**指腹软组织接触层**：
 
-**提议的解法**：给指尖加一层可压缩的指腹接触层（真实指腹有 3–5 mm 皮下脂肪，
-接触压力被摊到整个指腹面）。这是"物理优先"的自然做法，不是加抓取力常数。
-未实现。
+- 指骨胶囊半径 9 mm → 5 mm（真实指骨量级），外面留 4 mm 可压缩指腹
+- 每节指骨 12–15 个采样点（掌侧 ±46°、四站，末节另加指尖半球三点），
+  每点朝骨外打一条短射线，压进皮肉多少就按软组织刚度（2.6 kN/m/节）
+  顶回多少，切向给库仑摩擦（μ≈1.1）
+- 力作用在真实接触点上，因此会自动产生绕关节的力矩；接触压力摊在
+  整个指腹面上，合力把物体往掌心里带
+- 指腹只推不拉；握力仍然只来自肌力 × 力臂，没有加任何抓取力常数
+- 实现：`first_person_controller.gd` 的 `_build_pulp_samples()` /
+  `_update_finger_pads()`；接触状态记在 `_pulp_touch` 供测试判定
+
+实测（Windows + 4.7.2，默认 Ø3.2 cm / 0.30 m / 0.10 kg 木棍）：
+**11/11 通过**，位移 1.5–5.8 cm、末速 ≤0.25 m/s。
+
+**仍未解决**：Ø3.5 cm × 1.0 m 木棍超过 0.35 kg 就滑脱（0.45 kg 滑 0.43 m，
+0.58 kg 直接飞 3–5 m）。世界里刷出来的树枝是 1.0–2.0 m、Ø3.5–9 cm，
+多数比这重。瓶颈已经不是接触模型——测试里手掌被冻结、木棍悬在掌前，
+全部重量都压在手指上；真实握持时手掌托住大部分重量。下一步按顺序：
+先做 §5.3 的拇指对掌（现在拇指根比握持口袋近端偏 5–7 cm，够不到），
+再看要不要给手掌也加一层柔性接触。
 
 ### 5.2 骨折后卡顿 —— 未能复现
 
@@ -190,8 +228,9 @@ a73d638 玩法系统：世界生成 + 冶炼 + 锻造 + 自由建造
 
 ## 7. 下一步建议
 
-1. **指腹软组织接触层**（§5.1）——握持是"无背包 + 手持"玩法的基础，
-   这件不解决，后续所有物品交互都测不准。
+1. **§5.1 的剩余部分**——指腹层已经让 Ø3.2 cm 木棍稳定握住；接下来要让
+   世界里的真实树枝（1–2 m、Ø3.5–9 cm、0.4 kg 以上）也拿得起来：先做 §5.3
+   的拇指对掌，再看手掌是否也需要柔性接触层。
 2. **重新验证 P1.14/P1.15**——两人联机 + 50 人压测，把结果写回 SPEC。
 3. 把 `get_subsurface_composition` 接到接触路径（§5.4），让挖土的手感来自
    真实地层而不是一种土。

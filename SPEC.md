@@ -34,11 +34,11 @@
 
 | 层面 | 选型 | 版本 |
 |---|---|---|
-| 客户端引擎 | Godot | 4.6.3 |
-| 服务端 | Godot Headless | 4.6.3 |
-| 物理引擎 | Jolt Physics | Godot 4.6.3 内置 |
-| 脚本语言 | GDScript | Godot 4.6.3 内置 |
-| 网络传输 | ENet | Godot 4.6.3 内置 |
+| 客户端引擎 | Godot | 4.7.2 |
+| 服务端 | Godot Headless | 4.7.2 |
+| 物理引擎 | Jolt Physics | Godot 4.7.2 内置 |
+| 脚本语言 | GDScript | Godot 4.7.2 内置 |
+| 网络传输 | ENet | Godot 4.7.2 内置 |
 | 持久化 | JSON 文件 | FileAccess 读写 |
 | 部署目标 | Linux (Ubuntu 22.04) | — |
 | 客户端平台 | Windows 优先 | 10/11 |
@@ -76,7 +76,7 @@ godot --headless --path . --script tests/stress_test_50_clients.gd
 
 ```
 Silent Verse 2.0/
-├── project.godot                      # Godot 4.6.3 项目配置
+├── project.godot                      # Godot 4.7.2 项目配置
 ├── SPEC.md                            # 本文件
 ├── CLAUDE.md                          # AI 编码助手参考
 │
@@ -348,7 +348,7 @@ godot --headless --path . --script tests/run_all_tests.gd --ci
 1. **持久化方式** → JSON 文件（FileAccess 读写），Phase 1 不引入数据库依赖
 2. **美术资源** → Godot 内置 CSG 几何体（CSGBox3D/CSGCylinder3D/CSGSphere3D）搭临时模型，功能优先
 3. **测试环境** → 本地 LAN 测试（开发机运行服务端 + 2 客户端），有 VPS 后再迁移
-4. **Godot 版本** → 锁定 4.6.3 稳定版
+4. **Godot 版本** → 锁定 4.7.2 稳定版
 5. **浮点一致性** → 服务端力学公式用纯 GDScript 数学计算，不依赖 Jolt 物理步进结果，跨平台浮点一致
 
 ---
@@ -364,6 +364,11 @@ godot --headless --path . --script tests/run_all_tests.gd --ci
 | P1.14 两人联机冶炼循环 | ⚠️ 曾声称完成（`85694e2`），此后改动较大，未重新验证 |
 | P1.15 50 人压测 | ⚠️ 同上，未重新验证 |
 | 服务端权威分端 / 流式下发 | 按「当前开发策略」故意延后 |
+
+**2026-11-16 复验**：引擎统一到 Godot 4.7.2，在 Windows 上重跑 21 个测试场景，
+全部通过，4.7 未引入回归。当天给指骨加了可压缩指腹软组织接触层（4 mm 皮下
+脂肪、12-15 个采样点的分布弹簧-阻尼），`test_finger_grip` 从三次过一次变为
+连跑 11 次全过；Ø3.2 cm × 0.30 m 木棍能稳定握住。
 
 **超出原定范围的新增工作**：真物理手 / 骨架子系统（肩-肘-腕-掌-指刚体链、
 力限肌肉、骨骼断裂、皮肉网格），已提交并配套 12 个测试场景。它不在原任务表里，
