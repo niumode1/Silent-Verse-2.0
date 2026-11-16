@@ -683,6 +683,7 @@ func _build_item_body(item: ItemEntity) -> ItemPhysicsBody:
 
 	body.transform = Transform3D(item.transform.basis, dir * (visible_ground + lift))
 	body.fallback_position = dir * (visible_ground + lift)
+	body.ground_radius_sampler = Callable(self, "_sample_mesh_radius")
 	body.set_meta("spawn_pos", body.transform.origin)
 	body.set_meta("spawn_dir", dir)
 	return body
