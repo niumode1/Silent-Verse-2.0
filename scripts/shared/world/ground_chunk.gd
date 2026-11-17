@@ -193,6 +193,123 @@ func find_cell_at_world(world_position: Vector3) -> Vector3i:
 		int(round((local.z + half_z) / CELL_SIZE)))
 
 
+## 用接触力作用在地面上：ContactResolver 判定是否屈服，
+## 屈服后移除对应体积的格子并返回脱落物质（质量守恒）。
+## 不接受"挖"这个动作，只接受力/滑移/工具几何。
+func apply_contact(tool: MaterialProperty, contact_world: Vector3,
+		force: Vector3, slide: float, penetration_step: float,
+		tool_axis: Vector3, length: float, tip_radius: float,
+		shaft_radius: float, round_tip: bool) -> Dictionary:
+	if field == null or _cells.is_empty() or tool == null:
+		return {"contact": {}, "removed": {}, "cells_removed": 0}
+
+	var key := _find_top_solid_near(contact_world)
+	if key.x < 0:
+		return {"contact": {}, "removed": {}, "cells_removed": 0}
+	var cell: Dictionary = _cells[key]
+	var ground := _effective_ground(cell)
+	if ground == null:
+		return {"contact": {}, "removed": {}, "cells_removed": 0}
+
+	var center: Vector3 = get_world_center(key)
+	var normal: Vector3 = center.normalized()
+	var result: Dictionary = ContactResolver.resolve({
+		"tool": tool,
+		"ground": ground,
+		"force": force,
+		"ground_normal": normal,
+		"tool_axis": tool_axis,
+		"length": length,
+		"tip_radius": tip_radius,
+		"shaft_radius": shaft_radius,
+		"slide_distance": slide,
+		"depth": 0.0,
+		"penetration_step": penetration_step,
+		"round_tip": round_tip,
+	})
+
+	var displaced: float = float(result.get("displaced_volume", 0.0))
+	if not bool(result.get("ground_yield", false)) or displaced <= 0.0:
+		return {"contact": result, "removed": {}, "cells_removed": 0}
+
+	var cell_volume: float = CELL_SIZE * CELL_SIZE * CELL_SIZE
+	var count: int = clampi(int(round(displaced / cell_volume)), 1, 8)
+	var payloads: Array = []
+	for dy in range(count):
+		var key2 := Vector3i(key.x, key.y - dy, key.z)
+		if _cells.has(key2):
+			var payload := remove_cell(key2)
+			if not payload.is_empty():
+				payloads.append(payload)
+
+	if payloads.is_empty():
+		return {"contact": result, "removed": {}, "cells_removed": 0}
+
+	var total_mass: float = 0.0
+	var total_volume: float = 0.0
+	var comp_acc: Dictionary = {}
+	var first_state: Dictionary = {}
+	for payload in payloads:
+		if first_state.is_empty():
+			first_state = (payload["state"] as Dictionary).duplicate(true)
+		var mass: float = float(payload["mass_kg"])
+		total_mass += mass
+		total_volume += float(payload["volume_m3"])
+		for entry in payload["composition"]:
+			var id := String(entry["material_id"])
+			comp_acc[id] = float(comp_acc.get(id, 0.0)) \
+				+ float(entry["fraction"]) * mass
+
+	var composition: Array = []
+	for id in comp_acc:
+		composition.append({"material_id": String(id),
+			"fraction": float(comp_acc[id]) / maxf(total_mass, 1.0e-9)})
+	composition.sort_custom(func(a, b):
+		return float(a["fraction"]) > float(b["fraction"]))
+
+	return {
+		"contact": result,
+		"removed": {
+			"composition": composition,
+			"state": first_state,
+			"mass_kg": total_mass,
+			"volume_m3": total_volume,
+			"cells": payloads.size(),
+		},
+		"cells_removed": payloads.size(),
+	}
+
+
+func _find_top_solid_near(world_position: Vector3) -> Vector3i:
+	var probe := find_cell_at_world(world_position)
+	var x: int = clampi(probe.x, 0, SIZE_X - 1)
+	var z: int = clampi(probe.z, 0, SIZE_Z - 1)
+	for y in range(MAX_Y, MIN_Y - 1, -1):
+		var key := Vector3i(x, y, z)
+		if _cells.has(key):
+			return key
+	return Vector3i(-1, -1, -1)
+
+
+func _effective_ground(cell: Dictionary) -> MaterialProperty:
+	var parts: Array = []
+	for entry in cell["composition"]:
+		var mat := MaterialDB.get_material(String(entry["material_id"]))
+		if mat != null:
+			parts.append({"material": mat,
+				"fraction": float(entry["fraction"])})
+	if parts.is_empty():
+		return null
+	var ground := ContactResolver.composite(parts)
+	if ground == null:
+		return null
+	var state: Dictionary = cell["state"]
+	ground.density = float(state["density"])
+	ground.shear_strength = float(state["shear_strength_pa"]) / 1.0e6
+	ground.angle_of_repose = float(state["angle_of_repose_deg"])
+	return ground
+
+
 # ============================================================
 # 网格 / 碰撞
 # ============================================================

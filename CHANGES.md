@@ -63,7 +63,9 @@
 - 0–3 m 用 `Terrain.get_subsurface_composition`（表土/黏土/砂/砾石）；
 - 更深用 `PlanetInterior.get_composition`（地壳基岩/地幔/核心）；
 - 矿脉按富集度混入组成；
-- 纯查询，不存格子、不存道具。
+- 纯查询，不存格子、不存道具；
+- `get_dem_parameters(position, depth)`：把状态折算成 DEM 的密度/黏聚/
+  摩擦/刚度/滚动阻力，供 C++ 粒子内核使用。
 
 ### 4.2 PlanetInterior
 
@@ -96,6 +98,9 @@
 - 用 marching tetrahedra 从物质场提取**连续等值面**，不再是方块网格；
 - 内部采样点只是求值脚手架；表面是不规则三角面；
 - 支持移除一格 → 返回同质量物质载荷 → 重建表面；
+- `apply_contact(tool, contact_pos, force, slide, penetration_step, ...)`：
+  只接受力和工具几何，调用 `ContactResolver.resolve`；地面屈服后按
+  `displaced_volume` 移除格子，返回脱落物质的组成/状态/质量；
 - **注意**：这是过渡原型，最终地面要改成粒子法，尚未接进
   `WorldRenderer`。
 
@@ -139,6 +144,7 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 & $GODOT --headless --path . scenes/test_geology.tscn       # 27/27
 & $GODOT --headless --path . scenes/test_ground_chunk.tscn  # 19/19
 & $GODOT --headless --path . scenes/test_dem.tscn           # 11/11
+& $GODOT --headless --path . scenes/test_soil_contact.tscn  # 13/13
 & $GODOT --headless --path . scenes/test_dem_cpp.tscn       # 10/10（需先构建）
 ```
 
@@ -162,9 +168,10 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 ## 8. 还没做 / 坑
 
 - `GroundChunk` 尚未接进渲染/碰撞；客户端地面仍是静态三角网 + 试验场。
-- 接触力（ContactResolver）→ 移除物质 → 生成颗粒的链路还没接。
-- C++ 内核仍是球形粒子；不规则颗粒/破裂面、MPM/SPH、物质场参数传入
-  都没做。
+- 接触力 → 移除物质的链路已通（`GroundChunk.apply_contact`），但脱落
+  物质还没自动生成 DEM 粒子；目前返回的是组成/质量载荷。
+- C++ 内核仍是球形粒子；不规则颗粒/破裂面、MPM/SPH 都没做；
+  `MatterField.get_dem_parameters` 已能导出参数，但还没自动灌进 C++ 内核。
 - C++ 只构建了 Windows editor 目标；Linux/导出模板/多线程/GPU 未做。
 - 试验场石台是开发用人工构造；发布前关 `test_yard_enabled`。
 - `PlanetInterior` 的地壳厚度是为可玩性放大的，不是地球比例。
@@ -172,8 +179,9 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 
 ## 9. 下一步顺序
 
-1. 把 `MatterField` 的组成/含水率/压实度/抗剪强度传进 C++ 内核；
-2. ContactResolver → 移除物质 → 生成粒子，质量守恒；
+1. 把 `MatterField.get_dem_parameters()` 自动传进 C++ 内核（目前测试仍
+   用显式参数）；
+2. 把 `GroundChunk.apply_contact` 返回的脱落载荷自动转成 DEM 粒子；
 3. 不规则颗粒/碎块（破裂面）；
 4. 多线程空间分区，扩大活跃区；
 5. 湿泥/水 MPM/SPH；

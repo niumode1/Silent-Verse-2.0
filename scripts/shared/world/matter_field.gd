@@ -101,6 +101,29 @@ func _normalize(comp: Array) -> Array:
 	return out
 
 
+## 由物质场状态推导 DEM 参数，供 C++ 粒子内核使用。
+## 这不是另一套物理，只是把含水率/压实度/抗剪强度折算成粒子模型
+## 需要的等效参数（凝聚力是抗剪强度的一部分，不能直接全塞进接触）。
+func get_dem_parameters(position: Vector3, depth_m: float) -> Dictionary:
+	var sample := sample(position, depth_m)
+	var state: Dictionary = sample["state"]
+	var moisture: float = float(state["moisture"])
+	var compaction: float = float(state["compaction"])
+	var shear: float = float(state["shear_strength_pa"])
+
+	return {
+		"density": float(state["density"]),
+		"cohesion_pa": clampf(shear * 0.05, 0.0, 5000.0),
+		"friction": clampf(0.35 + 0.45 * compaction, 0.25, 0.90),
+		"stiffness": 2000.0 + 9000.0 * compaction,
+		"damping": 0.25,
+		"rolling_resistance": 0.02 + 0.03 * moisture,
+		"moisture": moisture,
+		"compaction": compaction,
+		"angle_of_repose_deg": float(state["angle_of_repose_deg"]),
+	}
+
+
 func get_density(composition: Array) -> float:
 	var density: float = 0.0
 	for entry in composition:
