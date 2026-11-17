@@ -137,7 +137,17 @@
   总和等于原体积、同种子同结果、每块网格/碰撞体齐全；
   `test_soil_contact` **18/18** 覆盖岩格碎裂。
 
-### 4.6 SoilDEM（GDScript 小样）
+### 4.6 可视化（过渡）
+
+[scripts/client/ground_chunk_node.gd](scripts/client/ground_chunk_node.gd)、
+[scenes/ground_demo.tscn](scenes/ground_demo.tscn)
+
+- `GroundChunkNode` 把格块的网格 + 顶点色材质 + 碰撞体挂进场景；
+- `ground_demo` 不替换正式 `WorldRenderer`，只生成一块 8×8 m 近场格块
+  给眼睛看（本机 headless 实测 2625 固体格、4419 网格顶点）；
+- 正式客户端仍是静态地形 + 材料试验场；格块地面还没接入。
+
+### 4.7 SoilDEM（GDScript 小样）
 
 [scripts/shared/world/soil_dem.gd](scripts/shared/world/soil_dem.gd)
 
@@ -201,6 +211,7 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 & $GODOT --headless --path . scenes/test_delta_terrain.tscn  # 12/12
 & $GODOT --headless --path . scenes/test_delta_persistence.tscn # 14/14
 & $GODOT --headless --path . scenes/test_fracture.tscn       # 14/14
+& $GODOT --path . scenes/ground_demo.tscn                   # 可视化（非测试）
 & $GODOT --headless --path . scenes/test_dem_cpp.tscn       # 20/20（需先构建）
 ```
 
@@ -242,6 +253,8 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
   后坑还在；换块/重载的读路径还需要把同一个 delta 传给新块。
 - `GroundChunk` 仍是单块原型，没有流式加载；`MatterDelta` 已能 JSON
   持久化并被多个块共享，但还没有接入正式存档/网络。
+- 格块地面已有可视化 demo，但正式 `WorldRenderer` 还用静态地形；
+  接入前要定近场范围、远场表示（静态网格/高度场）和流式加载策略。
 - 一次移除 0.125 m³ 表土：2 cm 颗粒约 2.7 万；预算 5000 时粒径约 3.6 cm。
 - C++ 只构建了 Windows editor 目标；Linux/导出模板/多线程/GPU 未做。
 - 试验场石台是开发用人工构造；发布前关 `test_yard_enabled`。
@@ -251,7 +264,7 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 ## 9. 下一步顺序
 
 1. 切面方向接完整应力张量/层理几何；
-2. 更大活跃区 + GPU/MPM；
+2. 把格块地面接进 `WorldRenderer`（近场格块 + 远场静态/高度场）；
 4. 多线程空间分区，扩大活跃区；
 5. 湿泥/水 MPM/SPH；
 6. 接入渲染/网络；服务端权威。
