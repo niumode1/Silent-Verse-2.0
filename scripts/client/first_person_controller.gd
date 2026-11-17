@@ -225,6 +225,12 @@ func _input(event: InputEvent) -> void:
 			_is_sprinting = event.pressed
 		if event.pressed and event.keycode == KEY_C:
 			_is_crouching = not _is_crouching
+		# 调试/交互：对前方近场地面施力（土→粒子，岩石→碎片）
+		if event.pressed and event.keycode == KEY_G and _camera != null:
+			var renderer = get_node_or_null("../WorldRenderer")
+			if renderer != null:
+				renderer.debug_strike(global_position,
+					-_camera.global_transform.basis.z)
 
 
 func _physics_process(delta: float) -> void:

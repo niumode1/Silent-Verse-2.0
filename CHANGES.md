@@ -154,9 +154,15 @@
 - `near_field_enabled` 可整体关闭，`near_field_hole_radius` 可调；
 - 格块会跟随玩家，按 **8 m 经纬度网格缓存**：跨格线时只生成新进入的
   块、释放离开的块，不会整批重建；洞口 shader 中心同步移动到玩家；
+- **G 键调试施力**：对前方近场格块调用 `GroundChunk.apply_contact`；
+  土 → 最多 1200 个 C++ DEM 粒子（MultiMesh 渲染），
+  岩石 → `ItemEntity` 破裂碎片并挂进 `WorldItems`；
+- 粒子系统在 `_process` 里按固定小步长推进并更新 MultiMesh；
 - 近场内的玩家/物品通过 **collision exception** 忽略静态地形碰撞，
   只和可见格块接触；离开近场后恢复。不再靠"抬高格块"近似。
 - 异常每 300 ms 更新一次，覆盖玩家和 `_items_root` 下的物品。
+- 客户端 G 键施力已经接通：土生成 C++ DEM 粒子并用 MultiMesh 渲染，
+  岩石生成独立 ItemEntity 碎片；移除同时写入 `MatterDelta`。
 
 ### 4.7 SoilDEM（GDScript 小样）
 
@@ -222,6 +228,7 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 & $GODOT --headless --path . scenes/test_delta_terrain.tscn  # 12/12
 & $GODOT --headless --path . scenes/test_delta_persistence.tscn # 14/14
 & $GODOT --headless --path . scenes/test_fracture.tscn       # 14/14
+& $GODOT --headless --path . scenes/test_client_strike.tscn  # 6/6（需先构建）
 & $GODOT --path . scenes/ground_demo.tscn                   # 可视化（非测试）
 & $GODOT --headless --path . scenes/test_dem_cpp.tscn       # 20/20（需先构建）
 ```
@@ -271,6 +278,9 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
   物体仍用静态碰撞；异常每 300 ms 才更新一次。
 - 格块跨格线时只生成新增块，但每块本身仍是全量生成；远场仍是现有
   50 m 静态网格。
+- DEM 粒子只和包围盒碰撞，不会和近场格块/地形碰撞；静止粒子也还没
+  自动合并回 `MatterDelta`。粒子是球体，不是不规则颗粒。
+- G 键是调试入口，不是正式的手/工具动作；还没有根据手部接触力自动触发。
 - 一次移除 0.125 m³ 表土：2 cm 颗粒约 2.7 万；预算 5000 时粒径约 3.6 cm。
 - C++ 只构建了 Windows editor 目标；Linux/导出模板/多线程/GPU 未做。
 - 试验场石台是开发用人工构造；发布前关 `test_yard_enabled`。

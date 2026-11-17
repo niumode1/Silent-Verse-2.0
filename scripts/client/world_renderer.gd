@@ -36,6 +36,11 @@ var _near_chunk_cache: Dictionary = {}
 var _terrain_body: StaticBody3D = null
 var _exception_on: Dictionary = {}
 var _next_exception_ms: int = 0
+var _matter_delta: MatterDelta = null
+## [{kernel, multimesh_instance, contact, composition, state}]
+var _particle_systems: Array = []
+## 最近一次 debug_strike 的结果，供测试读取
+var last_strike_result: Dictionary = {}
 
 ## 可见地表网格的顶点半径，供玩家贴地采样
 var _surface_heights: Array = []
@@ -81,6 +86,8 @@ func _ready() -> void:
 	_find_spawn_point(world_items)
 	if near_field_enabled:
 		_matter_field = MatterField.new(world_generator)
+		_matter_delta = MatterDelta.new()
+		_matter_field.set_delta(_matter_delta)
 		_setup_near_field_hole()
 		_generate_near_ground()
 	if test_yard_enabled:
@@ -430,6 +437,10 @@ void fragment() {
 
 
 ## 树/物品用的双线性高度：贴合可见网格，不浮空
+func get_particle_system_count() -> int:
+	return _particle_systems.size()
+
+
 func _setup_near_field_hole() -> void:
 	if _surface_shader == null:
 		return
@@ -520,6 +531,7 @@ func _chunk_dir(key: Vector2i, step: float) -> Vector3:
 
 
 func _process(_delta: float) -> void:
+	_update_particle_systems(_delta)
 	if not near_field_enabled or _matter_field == null or _player == null:
 		return
 	var position: Vector3 = _player.global_position
@@ -560,6 +572,145 @@ func _apply_near_exception(body: PhysicsBody3D, inside: bool) -> void:
 	else:
 		body.remove_collision_exception_with(_terrain_body)
 	_exception_on[id] = inside
+
+
+## 调试/交互：玩家对近场地面施加一次向下的力。
+## 土 → DEM 粒子；岩石 → 破裂 ItemEntity 碎片。
+func debug_strike(player_position: Vector3, look_dir: Vector3) -> Dictionary:
+	if _near_chunk_cache.is_empty():
+		return {}
+	var up: Vector3 = player_position.normalized()
+	var forward: Vector3 = look_dir - up * look_dir.dot(up)
+	if forward.length() < 0.001:
+		forward = up.cross(Vector3.RIGHT)
+	forward = forward.normalized()
+	var contact: Vector3 = player_position + forward * 1.0 - up * 0.1
+
+	var best: GroundChunkNode = null
+	var best_distance: float = INF
+	for node in _near_chunk_cache.values():
+		var distance: float = (node as GroundChunkNode).global_position.distance_to(
+			contact)
+		if distance < best_distance:
+			best_distance = distance
+			best = node
+	if best == null:
+		return {}
+
+	var tool := MaterialDB.get_material("flint")
+	if tool == null:
+		tool = MaterialDB.get_material("oak_wood")
+	var result: Dictionary = best.chunk.apply_contact(tool, contact,
+		-up * 600.0, 0.05, 0.02, up, 0.5, 0.004, 0.01, false)
+	best.refresh()
+	last_strike_result = result
+	var removed: Dictionary = result.get("removed", {})
+	if removed.is_empty():
+		return result
+
+	var fragments: Array = result.get("fragments", [])
+	if not fragments.is_empty():
+		if _items_root == null:
+			_items_root = Node3D.new()
+			_items_root.name = "WorldItems"
+			add_child(_items_root)
+		for item in fragments:
+			_items_root.add_child(_build_item_body(item))
+		print("[strike] rock fragments: ", fragments.size())
+	else:
+		_spawn_particles(removed, contact, up)
+	return result
+
+
+func _spawn_particles(payload: Dictionary, contact: Vector3,
+		up: Vector3) -> void:
+	var kernel = ClassDB.instantiate("SoilDEMKernel")
+	if kernel == null:
+		print("[strike] SoilDEMKernel not registered; skip particles")
+		return
+	var state: Dictionary = payload.get("state", {})
+	var density: float = maxf(float(state.get("density", 1600.0)), 1.0)
+	var mass: float = float(payload.get("mass_kg", 0.0))
+	if mass <= 0.0:
+		return
+	var budget: int = 1200
+	var radius: float = clampf(
+		SoilParticleBudget.radius_for_budget(mass, density, budget),
+		0.006, 0.05)
+	var params := _matter_field.get_dem_parameters(contact, 0.5)
+	kernel.setup_material(radius, density, params["cohesion_pa"],
+		params["friction"], params["stiffness"], params["damping"])
+	kernel.set_bounds(contact - Vector3.ONE * 1.2,
+		contact + Vector3.ONE * 1.2)
+	kernel.set_spherical_gravity(world_generator.planet_radius,
+		PhysicsConstants.g0)
+	var seed_value: int = int(contact.x * 1000.0) \
+		^ int(contact.y * 1000.0) ^ int(contact.z * 1000.0)
+	var count: int = kernel.spawn_from_mass(mass, contact + up * 0.2,
+		0.15, seed_value)
+	if count <= 0:
+		return
+
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.instance_count = count
+	multimesh.visible_instance_count = count
+	var sphere := SphereMesh.new()
+	sphere.radius = radius
+	sphere.height = radius * 2.0
+	sphere.radial_segments = 6
+	sphere.rings = 3
+	multimesh.mesh = sphere
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = "SoilParticles"
+	mmi.multimesh = multimesh
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = _material_color("topsoil", Color(0.32, 0.22, 0.13))
+	mat.roughness = 1.0
+	mmi.material_override = mat
+	add_child(mmi)
+
+	_particle_systems.append({
+		"kernel": kernel,
+		"multimesh": multimesh,
+		"multimesh_instance": mmi,
+		"contact": contact,
+		"composition": payload.get("composition", []),
+		"state": state,
+		"particle_radius": radius,
+	})
+	# 移除已经由 GroundChunk.apply_contact 写进 MatterDelta（field.delta），
+	# 这里不再重复记录。
+	print("[strike] soil particles: ", count, " × r=", snapped(radius, 0.001),
+		" m")
+
+
+func _update_particle_systems(delta: float) -> void:
+	if _particle_systems.is_empty():
+		return
+	var substeps: int = clampi(int(ceil(delta / 0.004)), 1, 4)
+	for index in range(_particle_systems.size() - 1, -1, -1):
+		var system: Dictionary = _particle_systems[index]
+		var kernel = system["kernel"]
+		if kernel == null:
+			_particle_systems.remove_at(index)
+			continue
+		for step in range(substeps):
+			kernel.step(1.0 / 240.0)
+		var positions: PackedVector3Array = kernel.get_positions()
+		var count: int = positions.size()
+		if count == 0:
+			var mmi: MultiMeshInstance3D = system["multimesh_instance"]
+			if is_instance_valid(mmi):
+				mmi.queue_free()
+			_particle_systems.remove_at(index)
+			continue
+		var multimesh: MultiMesh = system["multimesh"]
+		multimesh.instance_count = maxi(multimesh.instance_count, count)
+		multimesh.visible_instance_count = count
+		for i in range(count):
+			multimesh.set_instance_transform(i,
+				Transform3D(Basis.IDENTITY, positions[i]))
 
 
 func _displace_dir(up: Vector3, forward: Vector3, right: Vector3,
