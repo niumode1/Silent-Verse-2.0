@@ -118,7 +118,22 @@
 - **注意**：这是过渡原型，最终地面要改成粒子法，尚未接进
   `WorldRenderer`。
 
-### 4.5 SoilDEM（GDScript 小样）
+### 4.5 FractureGenerator（凸多面体破裂）
+
+[scripts/shared/items/fracture_generator.gd](scripts/shared/items/fracture_generator.gd)
+
+- 一个凸体积按平面反复切开，得到若干凸碎片；
+- 每个碎片 = 一组半空间平面，顶点用
+  `Geometry3D.compute_convex_mesh_points` 求交，面按平面分组三角化；
+- 体积由三角面片积分，质量 = 体积 × 密度；
+- `make_item_fragments` 直接产出独立 `ItemEntity`：每块自带网格、
+  体积、质心、碰撞体；
+- 当前切面方向由确定性 RNG 给出；后续应换成应力张量/层理/解理方向，
+  接口不变；
+- 测试 [test_fracture](tests/test_fracture.gd) **11/11**：8 块体积/质量
+  总和等于原体积、同种子同结果、每块网格/碰撞体齐全。
+
+### 4.6 SoilDEM（GDScript 小样）
 
 [scripts/shared/world/soil_dem.gd](scripts/shared/world/soil_dem.gd)
 
@@ -181,6 +196,7 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 & $GODOT --headless --path . scenes/test_particle_budget.tscn # 16/16（需先构建）
 & $GODOT --headless --path . scenes/test_delta_terrain.tscn  # 12/12
 & $GODOT --headless --path . scenes/test_delta_persistence.tscn # 14/14
+& $GODOT --headless --path . scenes/test_fracture.tscn       # 11/11
 & $GODOT --headless --path . scenes/test_dem_cpp.tscn       # 20/20（需先构建）
 ```
 
@@ -207,7 +223,9 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 - 接触力 → 移除物质 → DEM 粒子已通：`GroundChunk.apply_contact` 返回载荷，
   `SoilDEMKernel.spawn_from_mass` 按质量生成粒子（test_soil_particles
   7/7）。但还没有把它接进实际游戏循环/渲染。
-- C++ 内核仍是球形粒子；不规则颗粒/破裂面、MPM/SPH 都没做。
+- C++ 内核仍是球形粒子；`FractureGenerator` 已能生成不规则凸碎片和
+  ItemEntity，但还没接进 `GroundChunk.apply_contact` 的岩石破坏；
+  MPM/SPH 都没做。
 - C++ 接触计算已支持多线程（5000 粒子 4 线程约 2.6 倍），但每步都
   创建线程，正式版应换成线程池。
 - 球心重力已接进 C++ 内核（`set_spherical_gravity`），但坐标是球心原点；
@@ -228,7 +246,7 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 
 ## 9. 下一步顺序
 
-1. 不规则颗粒/碎块（破裂面）；
+1. 把 `FractureGenerator` 接进岩石破坏（岩块碎裂成 ItemEntity）；
 2. 线程池 + 更大活跃区；
 4. 多线程空间分区，扩大活跃区；
 5. 湿泥/水 MPM/SPH；
