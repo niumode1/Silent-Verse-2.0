@@ -26,6 +26,7 @@ func _ready() -> void:
 	_test_dem_params()
 	_test_low_force()
 	_test_high_force()
+	_test_rock_fragments()
 	print("=== Results: %d/%d passed, %d failed ===" % [
 		_pass, _pass + _fail, _fail])
 	get_tree().quit(0)
@@ -122,6 +123,39 @@ func _test_high_force() -> void:
 		var mesh := chunk.build_mesh()
 		_check(mesh != null and mesh.get_surface_count() > 0,
 			"mesh rebuilds after removal")
+
+
+func _test_rock_fragments() -> void:
+	print("[Rock fragments]")
+	var chunk := _build_chunk()
+	var rock_key := Vector3i(-1, -1, -1)
+	for key in chunk.get_all_keys():
+		var cell := chunk.get_cell(key)
+		var composition: Array = cell["composition"]
+		if composition.is_empty():
+			continue
+		var mat := MaterialDB.get_material(String(composition[0]["material_id"]))
+		if mat != null and mat.category != "soil":
+			rock_key = key
+			break
+	_check(rock_key.x >= 0, "found a rock cell in the chunk")
+	if rock_key.x < 0:
+		return
+	var items := chunk.fracture_cell(rock_key, 4, 99)
+	_check(items.size() == 4, "rock cell fractured into 4 ItemEntity")
+	var total_volume := 0.0
+	var meshes_ok := true
+	var shapes_ok := true
+	for item in items:
+		total_volume += item.get_volume_m3()
+		if item.custom_mesh == null:
+			meshes_ok = false
+		if ItemCollision.build_shapes(item, item.custom_mesh).is_empty():
+			shapes_ok = false
+	_check(meshes_ok, "every rock fragment has a mesh")
+	_check(shapes_ok, "every rock fragment has a convex collision shape")
+	_check(absf(total_volume - CELL * CELL * CELL) < 1.0e-4,
+		"fragment volumes sum to cell volume (%.4f)" % total_volume)
 
 
 func _check(condition: bool, label: String) -> void:

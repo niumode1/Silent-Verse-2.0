@@ -241,6 +241,7 @@ func apply_contact(tool: MaterialProperty, contact_world: Vector3,
 	var displaced: float = float(result.get("displaced_volume", 0.0))
 	if not bool(result.get("ground_yield", false)) or displaced <= 0.0:
 		return {"contact": result, "removed": {}, "cells_removed": 0}
+	var rocky: bool = String(ground.category) != "soil"
 
 	var cell_volume: float = CELL_SIZE * CELL_SIZE * CELL_SIZE
 	var count: int = clampi(int(round(displaced / cell_volume)), 1, 8)
@@ -280,6 +281,14 @@ func apply_contact(tool: MaterialProperty, contact_world: Vector3,
 	if field.delta != null:
 		field.delta.remove_volume(center, total_volume, composition, total_mass)
 
+	# 岩石：按破裂面生成独立 ItemEntity，而不是颗粒
+	var fragments: Array = []
+	if rocky:
+		var fragment_seed: int = (key.x * 73856093) \
+			^ (key.y * 19349663) ^ (key.z * 83492791)
+		fragments = _fragments_from_volume(total_volume, composition, center,
+			clampi(payloads.size() + 2, 2, 8), fragment_seed)
+
 	return {
 		"contact": result,
 		"removed": {
@@ -289,8 +298,30 @@ func apply_contact(tool: MaterialProperty, contact_world: Vector3,
 			"volume_m3": total_volume,
 			"cells": payloads.size(),
 		},
+		"fragments": fragments,
 		"cells_removed": payloads.size(),
 	}
+
+
+## 把某个格子的物质按破裂面切成独立 ItemEntity 碎片（不自动移除格子）。
+func fracture_cell(key: Vector3i, count: int, seed_value: int) -> Array:
+	if not _cells.has(key):
+		return []
+	var cell: Dictionary = _cells[key]
+	var volume: float = CELL_SIZE * CELL_SIZE * CELL_SIZE
+	return _fragments_from_volume(volume, cell["composition"],
+		get_world_center(key), count, seed_value)
+
+
+func _fragments_from_volume(volume: float, composition: Array,
+		center: Vector3, count: int, seed_value: int) -> Array:
+	if volume <= 0.0 or composition.is_empty():
+		return []
+	var dominant := String(composition[0]["material_id"])
+	var side: float = pow(volume, 1.0 / 3.0)
+	var size := Vector3(side, side, side)
+	return FractureGenerator.make_item_fragments(size, count, seed_value,
+		dominant, Transform3D(Basis.IDENTITY, center))
 
 
 func _find_top_solid_near(world_position: Vector3) -> Vector3i:
