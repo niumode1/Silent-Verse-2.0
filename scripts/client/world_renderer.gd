@@ -32,6 +32,10 @@ var _player: FirstPersonController = null
 var _near_stream_position: Vector3 = Vector3.ZERO
 ## 已生成的格块 {Vector2i(lon_idx, lat_idx): GroundChunkNode}
 var _near_chunk_cache: Dictionary = {}
+## 近场内的物体忽略静态地形碰撞，只和可见格块接触
+var _terrain_body: StaticBody3D = null
+var _exception_on: Dictionary = {}
+var _next_exception_ms: int = 0
 
 ## 可见地表网格的顶点半径，供玩家贴地采样
 var _surface_heights: Array = []
@@ -420,6 +424,7 @@ void fragment() {
 	collider.shape = terrain_shape
 	terrain_body.add_child(collider)
 	add_child(terrain_body)
+	_terrain_body = terrain_body
 
 	print("Surface mesh: ", steps_theta, "×", steps_phi, " quads, spacing=", surface_spacing, "m")
 
@@ -475,6 +480,7 @@ func _generate_near_ground(center: Vector3 = Vector3.ZERO) -> void:
 		node.free()
 
 	_near_stream_position = center
+	_update_near_collision(center)
 	print("Near ground: active=", _near_chunk_cache.size(),
 		" new=", new_count, " chunks around ",
 		snapped(center.length(), 0.1), " m")
@@ -494,18 +500,8 @@ func _build_near_chunk(key: Vector2i, step: float) -> void:
 	_near_ground_root.add_child(node)
 	node.setup(chunk)
 
-	# 静态地表和解析地形在 50 m 网格内可能有高差；在块覆盖范围内采样，
-	# 把近场块抬到静态面之上，避免玩家先撞到不可见的静态碰撞体。
-	var lift: float = 0.0
-	for offset in [Vector3.ZERO, right * 3.0, -right * 3.0,
-			forward * 3.0, -forward * 3.0]:
-		var sample_pos: Vector3 = anchor + offset
-		var static_height: float = _sample_mesh_radius(sample_pos)
-		var analytic_height: float = world_generator.terrain.get_surface_radius(
-			sample_pos)
-		lift = maxf(lift, static_height - analytic_height)
-	lift += 0.03
-	node.transform.origin = anchor + up * lift
+	# 近场内的玩家/物品会用 collision exception 忽略静态地形，
+	# 因此格块按解析地形放置，不需要再抬高。
 	_near_chunk_cache[key] = node
 
 
@@ -532,6 +528,38 @@ func _process(_delta: float) -> void:
 	if position.distance_to(_near_stream_position) < 4.0:
 		return
 	_generate_near_ground(position)
+
+
+## 近场内的玩家/物品忽略静态地形碰撞；离开后恢复。
+func _update_near_collision(center: Vector3) -> void:
+	if not near_field_enabled or _terrain_body == null:
+		return
+	var now: int = Time.get_ticks_msec()
+	if now < _next_exception_ms:
+		return
+	_next_exception_ms = now + 300
+	var radius: float = near_field_hole_radius
+	if _player != null:
+		_apply_near_exception(_player,
+			_player.global_position.distance_to(center) <= radius)
+	if _items_root == null:
+		return
+	for child in _items_root.get_children():
+		if child is ItemPhysicsBody:
+			_apply_near_exception(child,
+				(child as Node3D).global_position.distance_to(center) <= radius)
+
+
+func _apply_near_exception(body: PhysicsBody3D, inside: bool) -> void:
+	var id: int = body.get_instance_id()
+	var current: bool = bool(_exception_on.get(id, false))
+	if inside == current:
+		return
+	if inside:
+		body.add_collision_exception_with(_terrain_body)
+	else:
+		body.remove_collision_exception_with(_terrain_body)
+	_exception_on[id] = inside
 
 
 func _displace_dir(up: Vector3, forward: Vector3, right: Vector3,
