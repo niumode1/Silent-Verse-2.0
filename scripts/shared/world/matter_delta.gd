@@ -34,6 +34,87 @@ func get_deposit_count() -> int:
 	return _deposits.size()
 
 
+# ============================================================
+# 序列化（存档 / 网络）
+# ============================================================
+
+func to_dict() -> Dictionary:
+	var deposits: Array = []
+	for deposit in _deposits:
+		var pos: Vector3 = deposit["position"]
+		deposits.append({
+			"position": [pos.x, pos.y, pos.z],
+			"composition": (deposit["composition"] as Array).duplicate(true),
+			"state": (deposit["state"] as Dictionary).duplicate(true),
+			"mass_kg": float(deposit["mass_kg"]),
+			"volume_m3": float(deposit["volume_m3"]),
+		})
+	var removals: Array = []
+	for removal in _removals:
+		var pos: Vector3 = removal["position"]
+		removals.append({
+			"position": [pos.x, pos.y, pos.z],
+			"volume_m3": float(removal["volume_m3"]),
+			"radius_m": float(removal["radius_m"]),
+			"composition": (removal["composition"] as Array).duplicate(true),
+			"mass_kg": float(removal["mass_kg"]),
+		})
+	return {"version": 1, "deposits": deposits, "removals": removals}
+
+
+static func from_dict(data: Dictionary) -> MatterDelta:
+	var delta := MatterDelta.new()
+	for deposit in data.get("deposits", []):
+		delta._deposits.append({
+			"position": _vec_from_array(deposit.get("position", [])),
+			"composition": (deposit.get("composition", []) as Array).duplicate(true),
+			"state": (deposit.get("state", {}) as Dictionary).duplicate(true),
+			"mass_kg": float(deposit.get("mass_kg", 0.0)),
+			"volume_m3": float(deposit.get("volume_m3", 0.0)),
+		})
+	for removal in data.get("removals", []):
+		delta._removals.append({
+			"position": _vec_from_array(removal.get("position", [])),
+			"volume_m3": float(removal.get("volume_m3", 0.0)),
+			"radius_m": float(removal.get("radius_m", 0.0)),
+			"composition": (removal.get("composition", []) as Array).duplicate(true),
+			"mass_kg": float(removal.get("mass_kg", 0.0)),
+		})
+	return delta
+
+
+func save_to_file(path: String) -> bool:
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		return false
+	file.store_string(JSON.stringify(to_dict(), "\t"))
+	file.close()
+	return true
+
+
+static func load_from_file(path: String) -> MatterDelta:
+	if not FileAccess.file_exists(path):
+		return null
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return null
+	var text := file.get_as_text()
+	file.close()
+	var json := JSON.new()
+	if json.parse(text) != OK:
+		return null
+	var data = json.data
+	if not (data is Dictionary):
+		return null
+	return from_dict(data)
+
+
+static func _vec_from_array(value) -> Vector3:
+	if value is Array and value.size() >= 3:
+		return Vector3(float(value[0]), float(value[1]), float(value[2]))
+	return Vector3.ZERO
+
+
 func get_total_mass() -> float:
 	var total: float = 0.0
 	for deposit in _deposits:

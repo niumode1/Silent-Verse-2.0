@@ -71,7 +71,11 @@
   `get_surface_radius_at()`；
 - `MatterDelta` 也记录「挖走」：`remove_volume` 按半球坑反推半径，
   `get_removal_depth_at` 给出表面下陷，`get_surface_offset` 合并
-  堆积/挖走。
+  堆积/挖走；
+- `to_dict` / `from_dict` / `save_to_file` / `load_from_file`：JSON
+  持久化，堆积/挖走的组成、状态、质量、几何都能还原；
+- 同一个 `MatterDelta` 可以传给多个 `GroundChunk`，只有附近的块会
+  看到变化。
 
 ### 4.2 PlanetInterior
 
@@ -174,6 +178,7 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 & $GODOT --headless --path . scenes/test_soil_particles.tscn # 10/10（需先构建）
 & $GODOT --headless --path . scenes/test_particle_budget.tscn # 16/16（需先构建）
 & $GODOT --headless --path . scenes/test_delta_terrain.tscn  # 12/12
+& $GODOT --headless --path . scenes/test_delta_persistence.tscn # 14/14
 & $GODOT --headless --path . scenes/test_dem_cpp.tscn       # 14/14（需先构建）
 ```
 
@@ -209,8 +214,8 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
   高度，`GroundChunk.rebuild()` 能长出新格子和碰撞。
 - 「挖走」已经写进 `MatterDelta`（`remove_volume`），`GroundChunk.rebuild`
   后坑还在；换块/重载的读路径还需要把同一个 delta 传给新块。
-- `GroundChunk` 仍是单块原型，没有跨块/流式加载；delta 的持久化（JSON）
-  也还没写。
+- `GroundChunk` 仍是单块原型，没有流式加载；`MatterDelta` 已能 JSON
+  持久化并被多个块共享，但还没有接入正式存档/网络。
 - 一次移除 0.125 m³ 表土：2 cm 颗粒约 2.7 万；预算 5000 时粒径约 3.6 cm。
 - C++ 只构建了 Windows editor 目标；Linux/导出模板/多线程/GPU 未做。
 - 试验场石台是开发用人工构造；发布前关 `test_yard_enabled`。
@@ -219,8 +224,8 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 
 ## 9. 下一步顺序
 
-1. `MatterDelta` 持久化 + 跨块加载（把同一个 delta 传给新块）；
-2. 不规则颗粒/碎块（破裂面）；
+1. 不规则颗粒/碎块（破裂面）；
+2. C++ 内核多线程/更大活跃区；
 4. 多线程空间分区，扩大活跃区；
 5. 湿泥/水 MPM/SPH；
 6. 接入渲染/网络；服务端权威。
