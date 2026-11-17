@@ -2,6 +2,10 @@
 
 最后更新：2026-11-16（提交 `fc7dd99` 之后）
 
+> **2026-11-17 本机更新**：物品物理全物理化、材料试验场、物质场/
+> 行星内部/3D 矿脉、GDScript DEM 小样、C++ GDExtension 粒子内核。
+> 具体改动、决策、基准和未完成项见 [CHANGES.md](CHANGES.md)。
+
 给换一台机器继续做的人（或下一个会话）看。读完这一页再去翻
 [SPEC.md](SPEC.md) 和 [CLAUDE.md](CLAUDE.md)。
 
@@ -258,3 +262,25 @@ a73d638 玩法系统：世界生成 + 冶炼 + 锻造 + 自由建造
 3. 把 `get_subsurface_composition` 接到接触路径（§5.4），让挖土的手感来自
    真实地层而不是一种土。
 4. 骨折后卡顿若在新机器上复现，按 §5.2 收集四项信息再查。
+
+---
+
+## 8. 2026-11-17 本机更新
+
+完整记录见 [CHANGES.md](CHANGES.md)，摘要：
+
+- **物品物理**：禁止睡眠；球心重力改用 `constant_force`；防穿模射线；
+  按材料 `rolling_resistance` 加滚动阻力。999 个常醒物品从约 120 帧/25 s
+  提升到约 1200 帧/25 s。
+- **材料试验场**：出生点前方 72 个材料样品 + 平坦石台；开关
+  `WorldRenderer.test_yard_enabled`。
+- **世界地质**：`MatterField`（组成+状态）、`PlanetInterior`（地壳/地幔/
+  外核/内核，materials.json 共 73 种）、`OreVein`（3D FBM 矿脉+深度带）、
+  `GroundChunk`（marching tetrahedra 等值面，过渡原型）。
+- **粒子法**：`SoilDEM` GDScript 小样（1000 粒子，约 1.9 万更新/秒）；
+  C++ GDExtension `SoilDEMKernel`（1000 粒子 1.67M 更新/秒，5000 粒子
+  407K 更新/秒）。
+- 新增测试：`test_geology` 27/27、`test_ground_chunk` 19/19、
+  `test_dem` 11/11、`test_dem_cpp` 10/10。
+- **还没做**：物质场 → 接触力 → 颗粒生成的链路；不规则颗粒/破裂面；
+  MPM/SPH；地面渲染替换；服务端权威粒子同步。

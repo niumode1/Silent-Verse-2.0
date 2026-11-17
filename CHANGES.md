@@ -1,0 +1,180 @@
+# 2026-11-17 本机更新记录
+
+这份文件记录从 `944bb51` 之后在本机做的改动、当时的判断、怎么跑、以及
+还没做完的地方。**换机器/隔几天回来先看这里**，细节再点进对应文件。
+
+---
+
+## 1. 提交
+
+| 提交 | 内容 |
+|---|---|
+| `e4f148b` | 物品物理：全物理化、constant_force 球心重力、防穿模、材料试验场 |
+| `bb42fa8` | 物理手：拇指 CMC 两自由度原型 |
+| `a203a7b` | 世界地质：物质场、行星内部、3D 矿脉、DEM 原型 |
+| `47bb7bd` | C++ 粒子内核：GDExtension + DEM 基准 |
+
+`main` 与 `origin/main` 已同步。
+
+---
+
+## 2. 物品物理
+
+文件：[scripts/client/item_physics_body.gd](scripts/client/item_physics_body.gd)
+
+- **禁止睡眠**：`can_sleep = false`，删除手动 `sleeping = true` 和
+  `_still_time`；世界物品与试验场样品都一直参与模拟。
+- **球心重力**：不再每个刚体走 `_integrate_forces`，改用
+  `constant_force`，每 250 ms 刷新方向。999 个常醒物品的物理帧率从
+  约 120 帧/25 s 提升到约 1200 帧/25 s。
+- **防穿模**：用便宜的地表采样粗判，可疑时打物理射线实测；中心低于
+  真实地表 3 cm 就抬回、清径向速度。射线只在玩家 80 m 内做；物理模拟
+  本身不因远近停止。
+- **滚动阻力**：按材料的 `rolling_resistance` 施加 `Crr·N` 阻力与阻力矩，
+  避免圆柱在微小坡度上一直滚。
+- **回位判定**：删掉"比出生点低 25 m 就算掉穿"的错误规则；只在真的
+  埋入地表（射线实测 >2 m）或低于星球半径 20 m 时回位。
+
+## 3. 材料试验场
+
+文件：[scripts/shared/items/material_test_yard.gd](scripts/shared/items/material_test_yard.gd)
+
+- 出生点前方 7 m 生成一块平坦石台（`TestYardPad`），台上放 **72 个样品**：
+  63 种固体材料 + 5 根不同直径木棍 + 4 块重物；
+- 液体材料暂不生成（需要容器）；
+- 样品头顶有材料/硬度/密度/相态标签，35 m 内可见；
+- 开关：`WorldRenderer.test_yard_enabled`，发布前关掉；
+- 台面必须高于覆盖范围最高地形，生成时自动采样。
+
+## 4. 世界地质
+
+### 4.1 MatterField
+
+[scripts/shared/world/matter_field.gd](scripts/shared/world/matter_field.gd)
+
+位置 + 深度 → 组成 + 状态：
+
+```gdscript
+{ "composition": [{material_id, fraction}, ...],
+  "state": {moisture, compaction, temperature_c, pressure_pa,
+            density, shear_strength_pa, angle_of_repose_deg} }
+```
+
+- 0–3 m 用 `Terrain.get_subsurface_composition`（表土/黏土/砂/砾石）；
+- 更深用 `PlanetInterior.get_composition`（地壳基岩/地幔/核心）；
+- 矿脉按富集度混入组成；
+- 纯查询，不存格子、不存道具。
+
+### 4.2 PlanetInterior
+
+[scripts/shared/world/planet_interior.gd](scripts/shared/world/planet_interior.gd)
+
+- 层序与成分：地壳（按地质省）→ 地幔（橄榄岩+玄武岩）→
+  外核（熔融铁镍）→ 内核（固态铁镍）；
+- 厚度不能照搬地球：R≈4 km 时地球比例的地壳只有 22 m，装不下 1 km 地形
+  和矿脉，所以地壳放大到 45% R；层序/成分保持现实；
+- 温度/压力随深度连续变化（内核约 5200 °C、约 59 MPa）；
+- `materials.json` 新增 `peridotite`、`molten_iron`、`iron_nickel`，共 **73 种**。
+
+### 4.3 OreVein
+
+[scripts/shared/world/ore_vein.gd](scripts/shared/world/ore_vein.gd)
+
+- 替代表面哈希：每种矿一个 3D FBM 噪声场（世界种子决定），形成矿脉团块；
+- 深度带：煤 5–400 m、铜 20–800 m、赤铁矿 100–1200 m、
+  磁铁矿 150–1500 m、锡 80–1000 m、金 300–1700 m、燧石 0–60 m；
+- 寄主岩性匹配时概率更高（铜在沉积岩、锡在花岗岩、铁在变质/火山）；
+- 新接口：
+  `get_ore_deposits_at_depth(position, depth_m, terrain)`、
+  `get_ore_at(position, depth_m, terrain)`；
+- `WorldGenerator.query_world` 现在返回 `depth_m`、`interior`、`ores_underground`。
+
+### 4.4 GroundChunk（过渡原型）
+
+[scripts/shared/world/ground_chunk.gd](scripts/shared/world/ground_chunk.gd)
+
+- 用 marching tetrahedra 从物质场提取**连续等值面**，不再是方块网格；
+- 内部采样点只是求值脚手架；表面是不规则三角面；
+- 支持移除一格 → 返回同质量物质载荷 → 重建表面；
+- **注意**：这是过渡原型，最终地面要改成粒子法，尚未接进
+  `WorldRenderer`。
+
+### 4.5 SoilDEM（GDScript 小样）
+
+[scripts/shared/world/soil_dem.gd](scripts/shared/world/soil_dem.gd)
+
+- 1000 个 2 cm 粒子，软弹簧-阻尼接触 + Coulomb 摩擦 + 黏聚 + 推板；
+- 验证干砂/湿黏土/压实土响应不同、质量守恒、确定性；
+- GDScript 性能约 **1.9 万粒子更新/秒**（1000 粒子 ≈19 步/秒），
+  只够原型。
+
+## 5. C++ 粒子内核（GDExtension）
+
+目录：[gdextension/](gdextension/)
+
+- C++20 + Visual Studio + CMake/Ninja；godot-cpp master（API 4.7）；
+- [silent_verse_particles.gdextension](silent_verse_particles.gdextension)
+  使用 editor 目标；
+- `SoilDEMKernel`：与 GDScript DEM 同一套模型（软接触/摩擦/黏聚/推板）；
+- 构建：`gdextension\build.bat`；产物 `bin/`（gitignore）；
+- 首次加入后需重跑一次 Godot 编辑器导入（`--headless --editor --quit`）；
+- 测试：[tests/test_dem_cpp.gd](tests/test_dem_cpp.gd) **10/10 通过**。
+
+### 基准（本机 MSVC Release，60 步）
+
+| 粒子数 | 每秒粒子更新 | 每秒步数 |
+|---|---|---|
+| 1000 | 1,669,867 | 1670 |
+| 5000 | 406,745 | 81 |
+| GDScript 1000 | ~18,900 | 19 |
+
+- C++ 约 **88 倍**于 GDScript；
+- 5000 粒子按 60 Hz 需要 30 万更新/秒，当前单线程已覆盖；
+  更大活跃区需要多线程/GPU。
+
+## 6. 测试命令
+
+```powershell
+$GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
+& $GODOT --headless --path . scenes/test_geology.tscn       # 27/27
+& $GODOT --headless --path . scenes/test_ground_chunk.tscn  # 19/19
+& $GODOT --headless --path . scenes/test_dem.tscn           # 11/11
+& $GODOT --headless --path . scenes/test_dem_cpp.tscn       # 10/10（需先构建）
+```
+
+旧测试仍可跑：`test_items` 39/39，其余见 HANDOFF §2。
+3D 物理场景退出挂死（`run_on_separate_thread=true`）是已知的，看 stdout。
+
+## 7. 关键决定
+
+- **重力 g 不改为自然推导**：见 [WISHES.md](WISHES.md)。本游戏保留
+  `g0=9.81` 与现有密度，接受"人造/致密世界"前提。
+- **地面不是格子，也不是固定道具**：世界 = 物质场 + 稀疏增量；
+  近场才实体化。
+- **粒子法**：砂/砾用 DEM，湿泥/水用 MPM/SPH；只有活跃区有粒子，
+  静止后合并回物质场（质量守恒）。
+- **形状自然形成**：碎块沿应力/层理/解理/晶粒边界破裂，土壤颗粒来自
+  风化粒径分布；不用噪声生成随机形状。
+- **C++ 做粒子内核**：godot-cpp/Jolt/CUDA 生态在 C++；Rust 以后可用于
+  服务端编排/网络。
+- **不要全星球粒子**：4 km 星球全球 cm 级粒子不可能；活跃集 + LOD。
+
+## 8. 还没做 / 坑
+
+- `GroundChunk` 尚未接进渲染/碰撞；客户端地面仍是静态三角网 + 试验场。
+- 接触力（ContactResolver）→ 移除物质 → 生成颗粒的链路还没接。
+- C++ 内核仍是球形粒子；不规则颗粒/破裂面、MPM/SPH、物质场参数传入
+  都没做。
+- C++ 只构建了 Windows editor 目标；Linux/导出模板/多线程/GPU 未做。
+- 试验场石台是开发用人工构造；发布前关 `test_yard_enabled`。
+- `PlanetInterior` 的地壳厚度是为可玩性放大的，不是地球比例。
+- 服务端权威粒子同步、活跃区管理、持久化都还没开始。
+
+## 9. 下一步顺序
+
+1. 把 `MatterField` 的组成/含水率/压实度/抗剪强度传进 C++ 内核；
+2. ContactResolver → 移除物质 → 生成粒子，质量守恒；
+3. 不规则颗粒/碎块（破裂面）；
+4. 多线程空间分区，扩大活跃区；
+5. 湿泥/水 MPM/SPH；
+6. 接入渲染/网络；服务端权威。
