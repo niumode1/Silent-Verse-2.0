@@ -55,6 +55,7 @@ func _ready() -> void:
 	_test_determinism(field, anchor, right, forward, chunk)
 	_test_removal(chunk)
 	_test_mesh(chunk)
+	_test_large_patch(field, anchor, right, forward)
 
 	print("=== Results: %d/%d passed, %d failed ===" % [
 		_pass, _pass + _fail, _fail])
@@ -166,6 +167,26 @@ func _test_mesh(chunk: GroundChunk) -> void:
 	if shape is ConcavePolygonShape3D:
 		_check((shape as ConcavePolygonShape3D).backface_collision,
 			"collision shape is double-sided")
+
+
+func _test_large_patch(field: MatterField, anchor: Vector3,
+		right: Vector3, forward: Vector3) -> void:
+	print("[Large patch]")
+	var start := Time.get_ticks_msec()
+	var patch := GroundChunk.new(field, anchor, right, forward,
+		2.0, 64, 64, -4, 1)
+	var elapsed: int = Time.get_ticks_msec() - start
+	print("  128 m patch / 2 m cells: solid=", patch.get_solid_count(),
+		" built in ", elapsed, " ms")
+	_check(patch.get_solid_count() > 1000,
+		"large patch has solid cells (%d)" % patch.get_solid_count())
+	_check(patch.get_total_mass() > 0.0, "large patch has mass")
+	var mesh := patch.build_mesh()
+	_check(mesh != null and mesh.get_surface_count() > 0,
+		"large patch mesh generated")
+	var shape := patch.build_collision_shape()
+	_check(shape != null, "large patch collision generated")
+	_check(elapsed < 60000, "large patch builds in reasonable time")
 
 
 func _check(condition: bool, label: String) -> void:

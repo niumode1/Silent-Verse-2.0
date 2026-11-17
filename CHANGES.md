@@ -152,8 +152,13 @@
 - 静态地表材质换成 shader，在半径 12 m 的洞口内 `discard`；
 - 静态碰撞体保留（近场格块提供接触面）；远场仍是原静态地形；
 - `near_field_enabled` 可整体关闭，`near_field_hole_radius` 可调；
-- 格块会跟随玩家，按 **8 m 经纬度网格缓存**：跨格线时只生成新进入的
-  块、释放离开的块，不会整批重建；洞口 shader 中心同步移动到玩家；
+- **LOD 地面（M3）**：玩家周围生成单块 **180 m / 4 m 格** 的物质 patch
+  （`GroundChunk` 支持自定义 cell/size）；静态地形碰撞按三角面中心移除
+  65 m 洞口，视觉 shader 同步 discard；patch 半宽 90 m 覆盖洞口。
+  不再使用 per-body collision exception。
+- 粒子/物品/玩家现在直接与 patch 或带洞的静态碰撞体接触；
+- 但 4 m 粗格一次施力会整格移除（64 m³），会生成很大的粒子/载荷，
+  这是当前 M3 的主要缺点，需要混合细交互块或部分格子移除。
 - **G 键调试施力**：对前方近场格块调用 `GroundChunk.apply_contact`；
   土 → 最多 1200 个 C++ DEM 粒子（MultiMesh 渲染），
   岩石 → `ItemEntity` 破裂碎片并挂进 `WorldItems`；
@@ -281,8 +286,8 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
   后坑还在；换块/重载的读路径还需要把同一个 delta 传给新块。
 - `GroundChunk` 仍是单块原型，没有流式加载；`MatterDelta` 已能 JSON
   持久化并被多个块共享，但还没有接入正式存档/网络。
-- 正式客户端已有跟随玩家的近场格块（3×3、24 m）、8 m 网格缓存和
-  静态地表洞口 shader。
+- 正式客户端已有跟随玩家的 LOD patch（180 m / 4 m 格）和静态碰撞/视觉
+  洞口。patch 重建约 2.8 s，移动 45 m 触发一次，会有卡顿。
 - **静态碰撞体仍未开洞**：现在靠近场内玩家/物品的 collision exception
   忽略静态地形，属于"按物体统一"而不是"按地形开洞"。远场和其他
   物体仍用静态碰撞；异常每 300 ms 才更新一次。

@@ -15,8 +15,12 @@ extends Node3D
 @export var test_yard_enabled: bool = true
 ## 近场物质地面：出生点周围 3×3 个 8 m 格块，静态地表在洞口处 discard。
 @export var near_field_enabled: bool = true
-@export var near_field_chunks: int = 3
-@export var near_field_hole_radius: float = 12.0
+## LOD：玩家周围 220 m 的单块高精度物质地面（5 m 格）
+@export var near_field_patch_m: float = 180.0
+@export var near_field_cell_m: float = 4.0
+## 静态碰撞/视觉洞口半径；patch 半宽必须覆盖洞口 + 50 m 三角面
+@export var near_field_hole_radius: float = 65.0
+@export var near_field_stream_move_m: float = 45.0
 
 var world_generator: WorldGenerator = null
 var spawn_point: Vector3 = Vector3.ZERO
@@ -34,8 +38,9 @@ var _near_stream_position: Vector3 = Vector3.ZERO
 var _near_chunk_cache: Dictionary = {}
 ## 近场内的物体忽略静态地形碰撞，只和可见格块接触
 var _terrain_body: StaticBody3D = null
-var _exception_on: Dictionary = {}
-var _next_exception_ms: int = 0
+var _terrain_collider: CollisionShape3D = null
+var _surface_mesh: ArrayMesh = null
+var _near_patch_center: Vector3 = Vector3.ZERO
 var _matter_delta: MatterDelta = null
 ## [{kernel, multimesh_instance, contact, composition, state}]
 var _particle_systems: Array = []
@@ -378,6 +383,7 @@ func _generate_surface_mesh() -> void:
 	if mesh == null:
 		printerr("WorldRenderer: surface mesh generation failed")
 		return
+	_surface_mesh = mesh
 
 	var mi := MeshInstance3D.new()
 	mi.name = "TerrainSurface"
@@ -424,6 +430,7 @@ void fragment() {
 	terrain_phys.bounce = 0.0
 	terrain_body.physics_material_override = terrain_phys
 	var collider := CollisionShape3D.new()
+	_terrain_collider = collider
 	var terrain_shape := mesh.create_trimesh_shape()
 	if terrain_shape is ConcavePolygonShape3D:
 		# 双面碰撞：防止物品从网格背面穿进星球内部
@@ -478,10 +485,8 @@ func _setup_near_field_hole() -> void:
 	_surface_shader.set_shader_parameter("hole_radius", near_field_hole_radius)
 
 
-## 在 center 周围维护 n×n 个 8 m 物质格块。格块按经纬度网格缓存：
-## 玩家只在跨过 8 m 格线时生成新块、释放离开的块，不会整批重建。
-## 静态地表在洞口处被 shader discard；近场块会按静态地表高度轻微抬高，
-## 保证接触面优先命中可见格块。
+## 玩家周围 160 m 单块高精度物质地面（2.5 m 格）。静态地形的碰撞/视觉
+## 在 60 m 洞口内移除；patch 半宽 80 m，覆盖整个洞口。
 func _generate_near_ground(center: Vector3 = Vector3.ZERO) -> void:
 	if _matter_field == null:
 		return
@@ -492,72 +497,82 @@ func _generate_near_ground(center: Vector3 = Vector3.ZERO) -> void:
 		_near_ground_root = Node3D.new()
 		_near_ground_root.name = "NearGround"
 		add_child(_near_ground_root)
+
+	for key in _near_chunk_cache.keys():
+		var old: GroundChunkNode = _near_chunk_cache[key]
+		old.free()
+	_near_chunk_cache.clear()
+
+	var up: Vector3 = center.normalized()
+	var probe: Vector3 = up * world_generator.planet_radius
+	# 网格锚点抬高半个格子：让 y=0 是空气、y=-1 的格子中心落在
+	# 地表下半个格子处（4 m 格 → 表层土，而不是 4 m 深的基岩）。
+	var anchor: Vector3 = up * (
+		world_generator.terrain.get_surface_radius(probe)
+		+ near_field_cell_m * 0.5)
+	var forward := up.cross(Vector3.RIGHT)
+	if forward.length() < 0.001:
+		forward = up.cross(Vector3.FORWARD)
+	forward = forward.normalized()
+	var right: Vector3 = up.cross(forward).normalized()
+
+	var cells: int = maxi(8, int(round(near_field_patch_m
+		/ maxf(near_field_cell_m, 0.25))))
+	var start_ms: int = Time.get_ticks_msec()
+	var patch := GroundChunk.new(_matter_field, anchor, right, forward,
+		near_field_cell_m, cells, cells, -4, 1)
+	var node := GroundChunkNode.new()
+	node.name = "NearPatch"
+	_near_ground_root.add_child(node)
+	node.setup(patch)
+	_near_chunk_cache[Vector2i.ZERO] = node
+	_near_patch_center = center
+	_near_stream_position = center
+
 	if _surface_shader != null:
 		_surface_shader.set_shader_parameter("hole_center", center)
+		_surface_shader.set_shader_parameter("hole_radius",
+			near_field_hole_radius)
+	_rebuild_terrain_collision_hole(center, near_field_hole_radius)
+	print("Near ground: 1 patch ", near_field_patch_m, " m / ",
+		near_field_cell_m, " m cells, solid=", patch.get_solid_count(),
+		" built in ", Time.get_ticks_msec() - start_ms, " ms")
 
-	var step: float = 8.0 / world_generator.planet_radius
-	var base := _chunk_key(center, step)
-	var n: int = maxi(near_field_chunks, 1)
-	var half: int = int((n - 1) / 2)
-	var desired: Dictionary = {}
-	var new_count: int = 0
-	for ix in range(n):
-		for iz in range(n):
-			var key := base + Vector2i(ix - half, iz - half)
-			desired[key] = true
-			if not _near_chunk_cache.has(key):
-				_build_near_chunk(key, step)
-				new_count += 1
-			var node: GroundChunkNode = _near_chunk_cache[key]
-			if node.get_parent() != _near_ground_root:
-				node.reparent(_near_ground_root)
 
-	# 释放离开近场的块
-	for key in _near_chunk_cache.keys():
-		if desired.has(key):
+## 重建静态地形碰撞，跳过洞口内的三角面。
+func _rebuild_terrain_collision_hole(center: Vector3,
+		radius: float) -> void:
+	if _surface_mesh == null or _terrain_collider == null:
+		return
+	var arrays := _surface_mesh.surface_get_arrays(0)
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var kept: int = 0
+	for i in range(0, indices.size(), 3):
+		var a: Vector3 = vertices[indices[i]]
+		var b: Vector3 = vertices[indices[i + 1]]
+		var c: Vector3 = vertices[indices[i + 2]]
+		# 只要有一个顶点在洞口内就移除整片三角面：50 m 网格无法切出
+		# 小圆洞，这样能得到一个足够大的碰撞缺口，patch 覆盖它。
+		if a.distance_to(center) < radius \
+				or b.distance_to(center) < radius \
+				or c.distance_to(center) < radius:
 			continue
-		var node: GroundChunkNode = _near_chunk_cache[key]
-		_near_chunk_cache.erase(key)
-		node.free()
-
-	_near_stream_position = center
-	_update_near_collision(center)
-	print("Near ground: active=", _near_chunk_cache.size(),
-		" new=", new_count, " chunks around ",
-		snapped(center.length(), 0.1), " m")
-
-
-func _build_near_chunk(key: Vector2i, step: float) -> void:
-	var dir := _chunk_dir(key, step)
-	var up: Vector3 = dir.normalized()
-	var lon: float = (float(key.x) + 0.5) * step
-	var forward := Vector3(-sin(lon), 0.0, cos(lon)).normalized()
-	var right: Vector3 = up.cross(forward).normalized()
-	var probe: Vector3 = dir * world_generator.planet_radius
-	var anchor: Vector3 = dir * world_generator.terrain.get_surface_radius(probe)
-	var chunk := GroundChunk.new(_matter_field, anchor, right, forward)
-	var node := GroundChunkNode.new()
-	node.name = "NearChunk_%d_%d" % [key.x, key.y]
-	_near_ground_root.add_child(node)
-	node.setup(chunk)
-
-	# 近场内的玩家/物品会用 collision exception 忽略静态地形，
-	# 因此格块按解析地形放置，不需要再抬高。
-	_near_chunk_cache[key] = node
-
-
-func _chunk_key(position: Vector3, step: float) -> Vector2i:
-	var dir: Vector3 = position.normalized()
-	var lat: float = asin(clampf(dir.y, -1.0, 1.0))
-	var lon: float = atan2(dir.z, dir.x)
-	return Vector2i(int(floor(lon / step)), int(floor(lat / step)))
-
-
-func _chunk_dir(key: Vector2i, step: float) -> Vector3:
-	var lon: float = (float(key.x) + 0.5) * step
-	var lat: float = (float(key.y) + 0.5) * step
-	return Vector3(cos(lat) * cos(lon), sin(lat),
-		cos(lat) * sin(lon)).normalized()
+		st.add_vertex(a)
+		st.add_vertex(b)
+		st.add_vertex(c)
+		kept += 1
+	var filtered := st.commit()
+	if filtered == null:
+		return
+	var shape := filtered.create_trimesh_shape()
+	if shape is ConcavePolygonShape3D:
+		(shape as ConcavePolygonShape3D).backface_collision = true
+	_terrain_collider.shape = shape
+	print("Terrain collision hole: kept ", kept, " / ",
+		indices.size() / 3, " triangles")
 
 
 func _process(_delta: float) -> void:
@@ -567,41 +582,9 @@ func _process(_delta: float) -> void:
 	var position: Vector3 = _player.global_position
 	if position.length() < 1.0 or not _player.is_on_floor():
 		return
-	if position.distance_to(_near_stream_position) < 4.0:
+	if position.distance_to(_near_stream_position) < near_field_stream_move_m:
 		return
 	_generate_near_ground(position)
-
-
-## 近场内的玩家/物品忽略静态地形碰撞；离开后恢复。
-func _update_near_collision(center: Vector3) -> void:
-	if not near_field_enabled or _terrain_body == null:
-		return
-	var now: int = Time.get_ticks_msec()
-	if now < _next_exception_ms:
-		return
-	_next_exception_ms = now + 300
-	var radius: float = near_field_hole_radius
-	if _player != null:
-		_apply_near_exception(_player,
-			_player.global_position.distance_to(center) <= radius)
-	if _items_root == null:
-		return
-	for child in _items_root.get_children():
-		if child is ItemPhysicsBody:
-			_apply_near_exception(child,
-				(child as Node3D).global_position.distance_to(center) <= radius)
-
-
-func _apply_near_exception(body: PhysicsBody3D, inside: bool) -> void:
-	var id: int = body.get_instance_id()
-	var current: bool = bool(_exception_on.get(id, false))
-	if inside == current:
-		return
-	if inside:
-		body.add_collision_exception_with(_terrain_body)
-	else:
-		body.remove_collision_exception_with(_terrain_body)
-	_exception_on[id] = inside
 
 
 ## 调试入口：保持旧测试可用。
@@ -676,7 +659,7 @@ func _spawn_particles(payload: Dictionary, contact: Vector3,
 	var budget: int = 1200
 	var radius: float = clampf(
 		SoilParticleBudget.radius_for_budget(mass, density, budget),
-		0.006, 0.05)
+		0.006, 0.30)
 	var params := _matter_field.get_dem_parameters(contact, 0.5)
 	kernel.setup_material(radius, density, params["cohesion_pa"],
 		params["friction"], params["stiffness"], params["damping"])

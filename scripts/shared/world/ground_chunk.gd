@@ -20,6 +20,13 @@ const SIZE_Z := 16
 const MIN_Y := -10
 const MAX_Y := 2
 
+## 实例尺寸可覆盖：默认 8×8 m / 0.5 m 格；LOD 大块可传 128 m / 2 m。
+var cell_size: float = CELL_SIZE
+var size_x: int = SIZE_X
+var size_z: int = SIZE_Z
+var min_y: int = MIN_Y
+var max_y: int = MAX_Y
+
 ## 常用物质颜色；未列出的材料用确定性哈希色
 const MATERIAL_COLORS := {
 	"topsoil": Color(0.24, 0.16, 0.09),
@@ -63,9 +70,19 @@ var _node_color_cache: Dictionary = {}
 
 func _init(p_field: MatterField, p_anchor: Vector3,
 		p_right: Vector3 = Vector3.ZERO,
-		p_forward: Vector3 = Vector3.ZERO) -> void:
+		p_forward: Vector3 = Vector3.ZERO,
+		p_cell_size: float = CELL_SIZE,
+		p_size_x: int = SIZE_X,
+		p_size_z: int = SIZE_Z,
+		p_min_y: int = MIN_Y,
+		p_max_y: int = MAX_Y) -> void:
 	field = p_field
 	anchor = p_anchor
+	cell_size = p_cell_size
+	size_x = p_size_x
+	size_z = p_size_z
+	min_y = p_min_y
+	max_y = p_max_y
 	var up: Vector3 = p_anchor.normalized()
 	var forward: Vector3 = p_forward
 	forward -= up * forward.dot(up)
@@ -99,15 +116,15 @@ func _build_cells() -> void:
 	if field == null or field.terrain == null:
 		return
 
-	var half_x: float = float(SIZE_X - 1) * CELL_SIZE * 0.5
-	var half_z: float = float(SIZE_Z - 1) * CELL_SIZE * 0.5
-	for x in range(SIZE_X):
-		for z in range(SIZE_Z):
-			for y in range(MIN_Y, MAX_Y + 1):
+	var half_x: float = float(size_x - 1) * cell_size * 0.5
+	var half_z: float = float(size_z - 1) * cell_size * 0.5
+	for x in range(size_x):
+		for z in range(size_z):
+			for y in range(min_y, max_y + 1):
 				var local := Vector3(
-					float(x) * CELL_SIZE - half_x,
-					float(y) * CELL_SIZE,
-					float(z) * CELL_SIZE - half_z)
+					float(x) * cell_size - half_x,
+					float(y) * cell_size,
+					float(z) * cell_size - half_z)
 				var world_pos: Vector3 = anchor + basis * local
 				var surface: float = field.get_surface_radius_at(world_pos)
 				if world_pos.length() >= surface:
@@ -121,7 +138,7 @@ func _build_cells() -> void:
 					"center": world_pos,
 				}
 				_solid_count += 1
-				_total_mass += CELL_SIZE * CELL_SIZE * CELL_SIZE \
+				_total_mass += cell_size * cell_size * cell_size \
 					* float(sample["density"])
 
 
@@ -151,11 +168,11 @@ func get_all_keys() -> Array:
 	return _cells.keys()
 
 func get_local_center(key: Vector3i) -> Vector3:
-	var half_x: float = float(SIZE_X - 1) * CELL_SIZE * 0.5
-	var half_z: float = float(SIZE_Z - 1) * CELL_SIZE * 0.5
-	return Vector3(float(key.x) * CELL_SIZE - half_x,
-		float(key.y) * CELL_SIZE,
-		float(key.z) * CELL_SIZE - half_z)
+	var half_x: float = float(size_x - 1) * cell_size * 0.5
+	var half_z: float = float(size_z - 1) * cell_size * 0.5
+	return Vector3(float(key.x) * cell_size - half_x,
+		float(key.y) * cell_size,
+		float(key.z) * cell_size - half_z)
 
 func get_world_center(key: Vector3i) -> Vector3:
 	return anchor + basis * get_local_center(key)
@@ -167,7 +184,7 @@ func remove_cell(key: Vector3i) -> Dictionary:
 	if not _cells.has(key):
 		return {}
 	var cell: Dictionary = _cells[key]
-	var volume: float = CELL_SIZE * CELL_SIZE * CELL_SIZE
+	var volume: float = cell_size * cell_size * cell_size
 	var density: float = float(cell["density"])
 	var payload := {
 		"composition": (cell["composition"] as Array).duplicate(true),
@@ -183,7 +200,7 @@ func remove_cell(key: Vector3i) -> Dictionary:
 	if field == null or field.delta == null:
 		_carved.append({
 			"center": get_world_center(key),
-			"radius": CELL_SIZE * 0.72,
+			"radius": cell_size * 0.72,
 		})
 	_solid_count -= 1
 	_total_mass = maxf(_total_mass - volume * density, 0.0)
@@ -195,12 +212,12 @@ func remove_cell(key: Vector3i) -> Dictionary:
 ## 世界坐标附近的一格（用于接触点定位）。
 func find_cell_at_world(world_position: Vector3) -> Vector3i:
 	var local: Vector3 = basis.inverse() * (world_position - anchor)
-	var half_x: float = float(SIZE_X - 1) * CELL_SIZE * 0.5
-	var half_z: float = float(SIZE_Z - 1) * CELL_SIZE * 0.5
+	var half_x: float = float(size_x - 1) * cell_size * 0.5
+	var half_z: float = float(size_z - 1) * cell_size * 0.5
 	return Vector3i(
-		int(round((local.x + half_x) / CELL_SIZE)),
-		int(round(local.y / CELL_SIZE)),
-		int(round((local.z + half_z) / CELL_SIZE)))
+		int(round((local.x + half_x) / cell_size)),
+		int(round(local.y / cell_size)),
+		int(round((local.z + half_z) / cell_size)))
 
 
 ## 用接触力作用在地面上：ContactResolver 判定是否屈服，
@@ -243,7 +260,7 @@ func apply_contact(tool: MaterialProperty, contact_world: Vector3,
 		return {"contact": result, "removed": {}, "cells_removed": 0}
 	var rocky: bool = String(ground.category) != "soil"
 
-	var cell_volume: float = CELL_SIZE * CELL_SIZE * CELL_SIZE
+	var cell_volume: float = cell_size * cell_size * cell_size
 	var count: int = clampi(int(round(displaced / cell_volume)), 1, 8)
 	var payloads: Array = []
 	for dy in range(count):
@@ -315,7 +332,7 @@ func fracture_cell(key: Vector3i, count: int, seed_value: int,
 	if not _cells.has(key):
 		return []
 	var cell: Dictionary = _cells[key]
-	var volume: float = CELL_SIZE * CELL_SIZE * CELL_SIZE
+	var volume: float = cell_size * cell_size * cell_size
 	return _fragments_from_volume(volume, cell["composition"],
 		get_world_center(key), count, seed_value, preferred_normal, spread_deg)
 
@@ -336,9 +353,9 @@ func _fragments_from_volume(volume: float, composition: Array,
 
 func _find_top_solid_near(world_position: Vector3) -> Vector3i:
 	var probe := find_cell_at_world(world_position)
-	var x: int = clampi(probe.x, 0, SIZE_X - 1)
-	var z: int = clampi(probe.z, 0, SIZE_Z - 1)
-	for y in range(MAX_Y, MIN_Y - 1, -1):
+	var x: int = clampi(probe.x, 0, size_x - 1)
+	var z: int = clampi(probe.z, 0, size_z - 1)
+	for y in range(max_y, min_y - 1, -1):
 		var key := Vector3i(x, y, z)
 		if _cells.has(key):
 			return key
@@ -407,9 +424,9 @@ func _build_mesh_internal() -> ArrayMesh:
 		Vector3i(1, 1, 1), Vector3i(0, 1, 1),
 	]
 
-	for nx in range(SIZE_X):
-		for ny in range(MIN_Y, MAX_Y):
-			for nz in range(SIZE_Z):
+	for nx in range(size_x):
+		for ny in range(min_y, max_y):
+			for nz in range(size_z):
 				var pts: Array = []
 				var vals: Array = []
 				for c in corners:
@@ -423,11 +440,11 @@ func _build_mesh_internal() -> ArrayMesh:
 
 
 func _node_local(key: Vector3i) -> Vector3:
-	var half_x: float = float(SIZE_X) * CELL_SIZE * 0.5
-	var half_z: float = float(SIZE_Z) * CELL_SIZE * 0.5
-	return Vector3(float(key.x) * CELL_SIZE - half_x,
-		float(key.y) * CELL_SIZE,
-		float(key.z) * CELL_SIZE - half_z)
+	var half_x: float = float(size_x) * cell_size * 0.5
+	var half_z: float = float(size_z) * cell_size * 0.5
+	return Vector3(float(key.x) * cell_size - half_x,
+		float(key.y) * cell_size,
+		float(key.z) * cell_size - half_z)
 
 
 ## 正值 = 物质内部，负值 = 空气/空洞。破坏会在这里减去空洞。
