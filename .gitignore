@@ -23,3 +23,8 @@ Thumbs.db
 
 # User data (debug)
 user://
+
+# GDExtension build
+third_party/
+build/
+bin/

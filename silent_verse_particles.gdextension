@@ -1,0 +1,12 @@
+[configuration]
+
+entry_symbol = "silent_verse_particles_library_init"
+compatibility_minimum = "4.7"
+reloadable = true
+
+[libraries]
+
+windows.debug.x86_64 = "res://bin/libsilent_verse_particles.windows.editor.x86_64.dll"
+windows.release.x86_64 = "res://bin/libsilent_verse_particles.windows.editor.x86_64.dll"
+linux.debug.x86_64 = "res://bin/libsilent_verse_particles.linux.editor.x86_64.so"
+linux.release.x86_64 = "res://bin/libsilent_verse_particles.linux.editor.x86_64.so"
