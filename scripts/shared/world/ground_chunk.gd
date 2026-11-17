@@ -286,8 +286,13 @@ func apply_contact(tool: MaterialProperty, contact_world: Vector3,
 	if rocky:
 		var fragment_seed: int = (key.x * 73856093) \
 			^ (key.y * 19349663) ^ (key.z * 83492791)
+		# 层理/解理越强（friction_anisotropy 越大），切面越贴近接触法线；
+		# 各向同性岩石的破裂面更散。
+		var spread_deg: float = clampf(70.0
+			/ maxf(ground.friction_anisotropy, 1.0), 10.0, 80.0)
 		fragments = _fragments_from_volume(total_volume, composition, center,
-			clampi(payloads.size() + 2, 2, 8), fragment_seed)
+			clampi(payloads.size() + 2, 2, 8), fragment_seed, normal,
+			spread_deg)
 
 	return {
 		"contact": result,
@@ -304,24 +309,29 @@ func apply_contact(tool: MaterialProperty, contact_world: Vector3,
 
 
 ## 把某个格子的物质按破裂面切成独立 ItemEntity 碎片（不自动移除格子）。
-func fracture_cell(key: Vector3i, count: int, seed_value: int) -> Array:
+func fracture_cell(key: Vector3i, count: int, seed_value: int,
+		preferred_normal: Vector3 = Vector3.ZERO,
+		spread_deg: float = 180.0) -> Array:
 	if not _cells.has(key):
 		return []
 	var cell: Dictionary = _cells[key]
 	var volume: float = CELL_SIZE * CELL_SIZE * CELL_SIZE
 	return _fragments_from_volume(volume, cell["composition"],
-		get_world_center(key), count, seed_value)
+		get_world_center(key), count, seed_value, preferred_normal, spread_deg)
 
 
 func _fragments_from_volume(volume: float, composition: Array,
-		center: Vector3, count: int, seed_value: int) -> Array:
+		center: Vector3, count: int, seed_value: int,
+		preferred_normal: Vector3 = Vector3.ZERO,
+		spread_deg: float = 180.0) -> Array:
 	if volume <= 0.0 or composition.is_empty():
 		return []
 	var dominant := String(composition[0]["material_id"])
 	var side: float = pow(volume, 1.0 / 3.0)
 	var size := Vector3(side, side, side)
 	return FractureGenerator.make_item_fragments(size, count, seed_value,
-		dominant, Transform3D(Basis.IDENTITY, center))
+		dominant, Transform3D(Basis.IDENTITY, center), preferred_normal,
+		spread_deg)
 
 
 func _find_top_solid_near(world_position: Vector3) -> Vector3i:

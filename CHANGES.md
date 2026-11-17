@@ -128,8 +128,9 @@
 - 体积由三角面片积分，质量 = 体积 × 密度；
 - `make_item_fragments` 直接产出独立 `ItemEntity`：每块自带网格、
   体积、质心、碰撞体；
-- 当前切面方向由确定性 RNG 给出；后续应换成应力张量/层理/解理方向，
-  接口不变；
+- 切面方向：`preferred_normal` + `spread_deg`。岩石破坏时用接触法线作
+  优选方向，`friction_anisotropy` 越大（板岩 1.8）切面越贴近法线；
+  花岗岩等各向同性岩石破裂面更散；
 - `GroundChunk.fracture_cell` / `apply_contact`：岩石格受力破坏时直接
   产出独立 `ItemEntity` 碎片（不再是颗粒）；
 - 测试 [test_fracture](tests/test_fracture.gd) **11/11**：8 块体积/质量
@@ -199,7 +200,7 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 & $GODOT --headless --path . scenes/test_particle_budget.tscn # 16/16（需先构建）
 & $GODOT --headless --path . scenes/test_delta_terrain.tscn  # 12/12
 & $GODOT --headless --path . scenes/test_delta_persistence.tscn # 14/14
-& $GODOT --headless --path . scenes/test_fracture.tscn       # 11/11
+& $GODOT --headless --path . scenes/test_fracture.tscn       # 14/14
 & $GODOT --headless --path . scenes/test_dem_cpp.tscn       # 20/20（需先构建）
 ```
 
@@ -227,8 +228,8 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
   `SoilDEMKernel.spawn_from_mass` 按质量生成粒子（test_soil_particles
   7/7）。但还没有把它接进实际游戏循环/渲染。
 - C++ 内核仍是球形粒子；岩石破坏已经用 `FractureGenerator` 产出
-  独立 ItemEntity，但切面方向还是确定性 RNG，不是应力/层理/解理。
-  MPM/SPH 都没做。
+  独立 ItemEntity。切面方向已从纯随机改成「接触法线 + 各向异性 spread」，
+  但还不是完整应力张量/层理几何。MPM/SPH 都没做。
 - C++ 接触计算已支持多线程（5000 粒子 4 线程约 2.6 倍），但每步都
   创建线程，正式版应换成线程池。
 - 球心重力已接进 C++ 内核（`set_spherical_gravity`），但坐标是球心原点；
@@ -249,7 +250,7 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 
 ## 9. 下一步顺序
 
-1. 切面方向改成应力张量/层理/解理，替掉确定性 RNG；
+1. 切面方向接完整应力张量/层理几何；
 2. 线程池 + 更大活跃区；
 4. 多线程空间分区，扩大活跃区；
 5. 湿泥/水 MPM/SPH；

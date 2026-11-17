@@ -19,7 +19,11 @@ const EPS := 1.0e-4
 
 ## 把 size 大小的长方体切成 count 块，返回：
 ## [{planes, vertices, faces, volume, centroid}, ...]
-static func fracture_box(size: Vector3, count: int, seed_value: int) -> Array:
+## preferred_normal / spread_deg：切面法线的优选方向与允许偏角。
+## 层理/解理强的材料用小 spread；各向同性岩石用大 spread。
+static func fracture_box(size: Vector3, count: int, seed_value: int,
+		preferred_normal: Vector3 = Vector3.ZERO,
+		spread_deg: float = 180.0) -> Array:
 	var half := size * 0.5
 	var planes: Array[Plane] = [
 		Plane(Vector3.RIGHT, half.x),
@@ -29,7 +33,7 @@ static func fracture_box(size: Vector3, count: int, seed_value: int) -> Array:
 		Plane(Vector3.BACK, half.z),
 		Plane(Vector3.FORWARD, half.z),
 	]
-	var root := _make_fragment(planes)
+	var root := _make_fragment(planes, [])
 	if root.is_empty():
 		return []
 	var fragments: Array = [root]
@@ -44,7 +48,7 @@ static func fracture_box(size: Vector3, count: int, seed_value: int) -> Array:
 			if float(fragments[i]["volume"]) > float(fragments[index]["volume"]):
 				index = i
 		var parent: Dictionary = fragments[index]
-		var split := _split(parent, rng)
+		var split := _split(parent, rng, preferred_normal, deg_to_rad(spread_deg))
 		if split.is_empty():
 			break
 		fragments.remove_at(index)
@@ -59,15 +63,15 @@ static func fracture_box(size: Vector3, count: int, seed_value: int) -> Array:
 	return out
 
 
-static func _split(parent: Dictionary, rng: RandomNumberGenerator) -> Array:
+static func _split(parent: Dictionary, rng: RandomNumberGenerator,
+		preferred_normal: Vector3, spread_rad: float) -> Array:
 	var centroid: Vector3 = parent["centroid"]
 	var parent_planes: Array = parent["planes"]
 	var parent_volume: float = float(parent["volume"])
+	var preferred := preferred_normal.normalized() \
+		if preferred_normal.length() > 0.01 else Vector3.ZERO
 	for attempt in range(24):
-		var normal := Vector3(
-			rng.randf_range(-1.0, 1.0),
-			rng.randf_range(-1.0, 1.0),
-			rng.randf_range(-1.0, 1.0))
+		var normal := _sample_normal(rng, preferred, spread_rad)
 		if normal.length() < 0.01:
 			continue
 		normal = normal.normalized()
@@ -79,8 +83,12 @@ static func _split(parent: Dictionary, rng: RandomNumberGenerator) -> Array:
 			planes_b.append(plane)
 		planes_a.append(Plane(normal, d))
 		planes_b.append(Plane(-normal, -d))
-		var a := _make_fragment(planes_a)
-		var b := _make_fragment(planes_b)
+		var splits_a: Array = (parent["split_normals"] as Array).duplicate()
+		splits_a.append(normal)
+		var splits_b: Array = (parent["split_normals"] as Array).duplicate()
+		splits_b.append(normal)
+		var a := _make_fragment(planes_a, splits_a)
+		var b := _make_fragment(planes_b, splits_b)
 		if a.is_empty() or b.is_empty():
 			continue
 		if float(a["volume"]) < parent_volume * 0.05 \
@@ -90,8 +98,29 @@ static func _split(parent: Dictionary, rng: RandomNumberGenerator) -> Array:
 	return []
 
 
+## 在 preferred 周围的球冠内均匀采样一个方向；preferred 为零时全球面。
+static func _sample_normal(rng: RandomNumberGenerator, preferred: Vector3,
+		spread_rad: float) -> Vector3:
+	if preferred.length() < 0.01:
+		var z := rng.randf_range(-1.0, 1.0)
+		var az := rng.randf_range(0.0, TAU)
+		var r := sqrt(maxf(1.0 - z * z, 0.0))
+		return Vector3(r * cos(az), z, r * sin(az)).normalized()
+	var tangent := preferred.cross(Vector3.UP)
+	if tangent.length() < 0.01:
+		tangent = preferred.cross(Vector3.RIGHT)
+	tangent = tangent.normalized()
+	var bitangent := preferred.cross(tangent).normalized()
+	var max_angle: float = clampf(spread_rad, 0.0, PI)
+	var u := rng.randf()
+	var angle: float = acos(1.0 - u * (1.0 - cos(max_angle)))
+	var az := rng.randf_range(0.0, TAU)
+	return (preferred * cos(angle)
+		+ (tangent * cos(az) + bitangent * sin(az)) * sin(angle)).normalized()
+
+
 ## 由半空间平面求凸多面体：顶点、面、体积、质心。
-static func _make_fragment(planes: Array) -> Dictionary:
+static func _make_fragment(planes: Array, split_normals: Array = []) -> Dictionary:
 	var typed: Array[Plane] = []
 	for plane in planes:
 		typed.append(plane as Plane)
@@ -130,6 +159,7 @@ static func _make_fragment(planes: Array) -> Dictionary:
 		return {}
 	return {
 		"planes": typed,
+		"split_normals": split_normals.duplicate(),
 		"vertices": vertices,
 		"faces": faces,
 		"volume": volume,
@@ -177,8 +207,11 @@ static func _polyhedron_volume(vertices: PackedVector3Array, faces: Array,
 ## 把一次破裂直接变成独立 ItemEntity 碎片（切割即分体）。
 ## 每块自带网格、体积、质心；质量由材料密度 × 体积推导。
 static func make_item_fragments(size: Vector3, count: int, seed_value: int,
-		material_id: String, parent_transform: Transform3D) -> Array:
-	var fragments := fracture_box(size, count, seed_value)
+		material_id: String, parent_transform: Transform3D,
+		preferred_normal: Vector3 = Vector3.ZERO,
+		spread_deg: float = 180.0) -> Array:
+	var fragments := fracture_box(size, count, seed_value, preferred_normal,
+		spread_deg)
 	var items: Array = []
 	for fragment in fragments:
 		var item := ItemEntity.new()

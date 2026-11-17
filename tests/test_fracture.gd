@@ -58,6 +58,7 @@ func _ready() -> void:
 		fragments.map(func(f): return snapped(float(f["volume"]), 0.0001)))
 
 	_test_item_fragments(size, volume)
+	_test_preferred_normals(size)
 
 	print("=== Results: %d/%d passed, %d failed ===" % [
 		_pass, _pass + _fail, _fail])
@@ -86,6 +87,33 @@ func _test_item_fragments(size: Vector3, volume: float) -> void:
 	_check(absf(total_mass - expected) < expected * 0.01,
 		"fragment masses sum to parent (%.1f vs %.1f kg)"
 		% [total_mass, expected])
+
+
+func _test_preferred_normals(size: Vector3) -> void:
+	print("[Preferred normals]")
+	var preferred := Vector3.UP
+	var aligned := FractureGenerator.fracture_box(size, 8, 42, preferred, 10.0)
+	var spread := FractureGenerator.fracture_box(size, 8, 42, preferred, 180.0)
+	var aligned_avg := _normal_alignment(aligned, preferred)
+	var spread_avg := _normal_alignment(spread, preferred)
+	_check(aligned_avg > 0.9,
+		"narrow spread follows preferred normal (avg |dot| %.2f)"
+		% aligned_avg)
+	_check(spread_avg < 0.9,
+		"wide spread is not locked to preferred normal (avg |dot| %.2f)"
+		% spread_avg)
+	_check(aligned_avg > spread_avg,
+		"anisotropic fracturing is more aligned than isotropic")
+
+
+func _normal_alignment(fragments: Array, preferred: Vector3) -> float:
+	var total := 0.0
+	var count := 0
+	for fragment in fragments:
+		for normal in fragment["split_normals"]:
+			total += absf((normal as Vector3).normalized().dot(preferred))
+			count += 1
+	return total / maxf(float(count), 1.0)
 
 
 func _check(condition: bool, label: String) -> void:
