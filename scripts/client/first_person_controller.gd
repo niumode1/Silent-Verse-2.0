@@ -225,12 +225,6 @@ func _input(event: InputEvent) -> void:
 			_is_sprinting = event.pressed
 		if event.pressed and event.keycode == KEY_C:
 			_is_crouching = not _is_crouching
-		# 调试/交互：对前方近场地面施力（土→粒子，岩石→碎片）
-		if event.pressed and event.keycode == KEY_G and _camera != null:
-			var renderer = get_node_or_null("../WorldRenderer")
-			if renderer != null:
-				renderer.debug_strike(global_position,
-					-_camera.global_transform.basis.z)
 
 
 func _physics_process(delta: float) -> void:
@@ -289,6 +283,17 @@ func _physics_process(delta: float) -> void:
 	# 跳跃
 	if Input.is_action_just_pressed("interact") and is_on_floor():
 		velocity += sky * jump_velocity
+
+	# 主要动作：用当前身体力量对前方近场地面施力（土→粒子，岩石→碎片）
+	if Input.is_action_just_pressed("primary_action") and _camera != null:
+		var renderer = get_node_or_null("../WorldRenderer")
+		if renderer != null:
+			var force_n: float = 600.0
+			if _player_body != null:
+				force_n = _player_body.get_max_force() * 2.0
+			var hand_tool := MaterialDB.get_material("bone")
+			renderer.strike_ground(global_position,
+				-_camera.global_transform.basis.z, force_n, hand_tool)
 
 	# 真正走物理碰撞：地形 + 树干都会挡住
 	var position_before := global_position

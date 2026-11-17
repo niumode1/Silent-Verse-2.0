@@ -164,8 +164,10 @@
 - 近场内的玩家/物品通过 **collision exception** 忽略静态地形碰撞，
   只和可见格块接触；离开近场后恢复。不再靠"抬高格块"近似。
 - 异常每 300 ms 更新一次，覆盖玩家和 `_items_root` 下的物品。
-- 客户端 G 键施力已经接通：土生成 C++ DEM 粒子并用 MultiMesh 渲染，
-  岩石生成独立 ItemEntity 碎片；移除同时写入 `MatterDelta`。
+- 客户端施力已接到 `primary_action`（鼠标左键）：力量来自
+  `PlayerBody.get_max_force() × 2`，工具材质用 `bone`（手骨）；
+  G 键调试入口已移除。土生成 C++ DEM 粒子，岩石生成独立 ItemEntity
+  碎片；移除同时写入 `MatterDelta`。
 
 ### 4.7 SoilDEM（GDScript 小样）
 

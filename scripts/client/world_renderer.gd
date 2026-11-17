@@ -587,9 +587,15 @@ func _apply_near_exception(body: PhysicsBody3D, inside: bool) -> void:
 	_exception_on[id] = inside
 
 
-## 调试/交互：玩家对近场地面施加一次向下的力。
-## 土 → DEM 粒子；岩石 → 破裂 ItemEntity 碎片。
+## 调试入口：保持旧测试可用。
 func debug_strike(player_position: Vector3, look_dir: Vector3) -> Dictionary:
+	return strike_ground(player_position, look_dir, 600.0, null)
+
+
+## 玩家对近场地面施加一次力。
+## 土 → DEM 粒子；岩石 → 破裂 ItemEntity 碎片。
+func strike_ground(player_position: Vector3, look_dir: Vector3,
+		force_n: float = 600.0, tool: MaterialProperty = null) -> Dictionary:
 	if _near_chunk_cache.is_empty():
 		return {}
 	var up: Vector3 = player_position.normalized()
@@ -610,11 +616,12 @@ func debug_strike(player_position: Vector3, look_dir: Vector3) -> Dictionary:
 	if best == null:
 		return {}
 
-	var tool := MaterialDB.get_material("flint")
+	if tool == null:
+		tool = MaterialDB.get_material("flint")
 	if tool == null:
 		tool = MaterialDB.get_material("oak_wood")
 	var result: Dictionary = best.chunk.apply_contact(tool, contact,
-		-up * 600.0, 0.05, 0.02, up, 0.5, 0.004, 0.01, false)
+		-up * maxf(force_n, 1.0), 0.05, 0.02, up, 0.5, 0.004, 0.01, false)
 	best.refresh()
 	last_strike_result = result
 	var removed: Dictionary = result.get("removed", {})
