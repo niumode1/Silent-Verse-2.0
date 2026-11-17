@@ -27,6 +27,7 @@ func _ready() -> void:
 	_test_determinism()
 	_test_states()
 	_test_spherical_gravity()
+	_test_ground_plane()
 	_test_threads()
 	_benchmark(1000)
 	_benchmark(5000)
@@ -116,6 +117,30 @@ func _test_spherical_gravity() -> void:
 		% [before, after])
 	_check(absf(float(k.get_total_mass()) - mass_before) < 1e-6,
 		"mass conserved under spherical gravity")
+
+
+func _test_ground_plane() -> void:
+	print("[Ground Plane]")
+	var k = ClassDB.instantiate("SoilDEMKernel")
+	k.setup_material(0.01, 1600.0, 0.0, 0.5, 2500.0, 0.2)
+	k.set_bounds(Vector3(-1.0, -1.0, -1.0), Vector3(1.0, 2.0, 1.0))
+	k.set_planar_gravity(9.81)
+	k.set_ground_plane(Vector3.UP, 0.0)
+	var spawned = k.spawn_from_mass(3.0, Vector3(0.0, 1.0, 0.0), 0.1, 13)
+	var mass_before := float(k.get_total_mass())
+	for i in range(120):
+		k.step(DT)
+	var below := 0
+	var lowest := INF
+	for p in k.get_positions():
+		lowest = minf(lowest, p.y)
+		if p.y < -0.02:
+			below += 1
+	_check(int(spawned) > 0, "particles spawned above ground")
+	_check(below == 0, "no particle below the ground plane (lowest %.3f m)"
+		% lowest)
+	_check(absf(float(k.get_total_mass()) - mass_before) < 1e-6,
+		"mass conserved on ground plane")
 
 
 func _mean_radius(k) -> float:

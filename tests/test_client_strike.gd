@@ -42,9 +42,13 @@ func _ready() -> void:
 		_check(has_particles or not fragments.is_empty(),
 			"soil produced particles or rock produced fragments")
 
-	for i in range(20):
+	for i in range(220):
 		await get_tree().process_frame
-	if renderer.get_particle_system_count() > 0:
+	var delta_mass := renderer.get_matter_delta_mass()
+	if delta_mass > 0.0:
+		_check(true, "settled particles consolidated into MatterDelta (%.1f kg)"
+			% delta_mass)
+	elif renderer.get_particle_system_count() > 0:
 		_check(true, "particle system still alive after stepping")
 	_finish()
 

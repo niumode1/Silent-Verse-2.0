@@ -158,6 +158,9 @@
   土 → 最多 1200 个 C++ DEM 粒子（MultiMesh 渲染），
   岩石 → `ItemEntity` 破裂碎片并挂进 `WorldItems`；
 - 粒子系统在 `_process` 里按固定小步长推进并更新 MultiMesh；
+- DEM 粒子有**局部地面平面**（`set_ground_plane`），不会穿过地表；
+- 静止粒子每 2 s 通过 `consolidate_slow` 合并回 `MatterDelta`，
+  并重建附近的近场格块；
 - 近场内的玩家/物品通过 **collision exception** 忽略静态地形碰撞，
   只和可见格块接触；离开近场后恢复。不再靠"抬高格块"近似。
 - 异常每 300 ms 更新一次，覆盖玩家和 `_items_root` 下的物品。
@@ -200,7 +203,7 @@
   `MatterDelta` 时把质量/组成/状态写回稀疏增量。
 - 构建：`gdextension\build.bat`；产物 `bin/`（gitignore）；
 - 首次加入后需重跑一次 Godot 编辑器导入（`--headless --editor --quit`）；
-- 测试：[tests/test_dem_cpp.gd](tests/test_dem_cpp.gd) **10/10 通过**。
+- 测试：[tests/test_dem_cpp.gd](tests/test_dem_cpp.gd) **23/23 通过**。
 
 ### 基准（本机 MSVC Release，60 步）
 
@@ -229,8 +232,8 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 & $GODOT --headless --path . scenes/test_delta_persistence.tscn # 14/14
 & $GODOT --headless --path . scenes/test_fracture.tscn       # 14/14
 & $GODOT --headless --path . scenes/test_client_strike.tscn  # 6/6（需先构建）
+& $GODOT --headless --path . scenes/test_dem_cpp.tscn       # 23/23（需先构建）
 & $GODOT --path . scenes/ground_demo.tscn                   # 可视化（非测试）
-& $GODOT --headless --path . scenes/test_dem_cpp.tscn       # 20/20（需先构建）
 ```
 
 旧测试仍可跑：`test_items` 39/39，其余见 HANDOFF §2。
@@ -278,8 +281,10 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
   物体仍用静态碰撞；异常每 300 ms 才更新一次。
 - 格块跨格线时只生成新增块，但每块本身仍是全量生成；远场仍是现有
   50 m 静态网格。
-- DEM 粒子只和包围盒碰撞，不会和近场格块/地形碰撞；静止粒子也还没
-  自动合并回 `MatterDelta`。粒子是球体，不是不规则颗粒。
+- DEM 粒子现在和局部地面平面碰撞，静止粒子会合并回 `MatterDelta`；
+  但地面是平面近似，不是真实格块高度场。粒子仍是球体，不是不规则颗粒。
+- 合并后的堆积会抬高地形并重建格块，但堆积的组成/状态只来自一次
+  施力的载荷。
 - G 键是调试入口，不是正式的手/工具动作；还没有根据手部接触力自动触发。
 - 一次移除 0.125 m³ 表土：2 cm 颗粒约 2.7 万；预算 5000 时粒径约 3.6 cm。
 - C++ 只构建了 Windows editor 目标；Linux/导出模板/多线程/GPU 未做。

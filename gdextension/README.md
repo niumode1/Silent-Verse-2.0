@@ -57,6 +57,7 @@ k.set_bounds(min, max)
 k.set_tool(x, speed)
 k.set_spherical_gravity(R, g0)                  # 球心重力
 k.set_planar_gravity(g)
+k.set_ground_plane(normal, distance)            # 局部地面平面
 k.set_threads(n)                                # 接触计算并行线程数
 k.step(dt)
 k.get_positions()

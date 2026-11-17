@@ -441,6 +441,19 @@ func get_particle_system_count() -> int:
 	return _particle_systems.size()
 
 
+func get_matter_delta_mass() -> float:
+	return _matter_delta.get_total_mass() if _matter_delta != null else 0.0
+
+
+func _refresh_chunks_near(center: Vector3) -> void:
+	for node in _near_chunk_cache.values():
+		var chunk_node: GroundChunkNode = node
+		if chunk_node.global_position.distance_to(center) > 8.0:
+			continue
+		chunk_node.chunk.rebuild()
+		chunk_node.refresh()
+
+
 func _setup_near_field_hole() -> void:
 	if _surface_shader == null:
 		return
@@ -644,6 +657,8 @@ func _spawn_particles(payload: Dictionary, contact: Vector3,
 		contact + Vector3.ONE * 1.2)
 	kernel.set_spherical_gravity(world_generator.planet_radius,
 		PhysicsConstants.g0)
+	# 局部地面平面：粒子落在地表而不是包围盒底
+	kernel.set_ground_plane(up, contact.length())
 	var seed_value: int = int(contact.x * 1000.0) \
 		^ int(contact.y * 1000.0) ^ int(contact.z * 1000.0)
 	var count: int = kernel.spawn_from_mass(mass, contact + up * 0.2,
@@ -678,6 +693,7 @@ func _spawn_particles(payload: Dictionary, contact: Vector3,
 		"composition": payload.get("composition", []),
 		"state": state,
 		"particle_radius": radius,
+		"last_consolidate_ms": Time.get_ticks_msec(),
 	})
 	# 移除已经由 GroundChunk.apply_contact 写进 MatterDelta（field.delta），
 	# 这里不再重复记录。
@@ -697,6 +713,18 @@ func _update_particle_systems(delta: float) -> void:
 			continue
 		for step in range(substeps):
 			kernel.step(1.0 / 240.0)
+
+		# 静止粒子定期合并回物质场增量，并重建附近格块
+		var now: int = Time.get_ticks_msec()
+		if now - int(system.get("last_consolidate_ms", 0)) >= 2000:
+			system["last_consolidate_ms"] = now
+			var consolidated := SoilParticleBudget.consolidate_slow(
+				kernel, 0.05, _matter_delta,
+				system.get("contact", Vector3.ZERO),
+				system.get("composition", []), system.get("state", {}))
+			if int(consolidated["count"]) > 0:
+				_refresh_chunks_near(system.get("contact", Vector3.ZERO))
+
 		var positions: PackedVector3Array = kernel.get_positions()
 		var count: int = positions.size()
 		if count == 0:

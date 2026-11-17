@@ -250,6 +250,16 @@ void SoilDEMKernel::set_planar_gravity(double gravity) {
 	surface_gravity_ = static_cast<float>(gravity);
 }
 
+void SoilDEMKernel::set_ground_plane(const Vector3 &normal, double distance) {
+	if (normal.length_squared() < 1.0e-8) {
+		ground_plane_enabled_ = false;
+		return;
+	}
+	ground_normal_ = normal.normalized();
+	ground_distance_ = static_cast<float>(distance);
+	ground_plane_enabled_ = true;
+}
+
 void SoilDEMKernel::set_threads(int count) {
 	const int next = std::max(1, std::min(count, 16));
 	if (next == thread_count_ && (next == 1 || pool_)) {
@@ -376,6 +386,22 @@ void SoilDEMKernel::step(double dt_in) {
 		v *= damp;
 		positions_[i] += v * dt;
 		_clamp_to_box(i);
+		if (ground_plane_enabled_) {
+			const float penetration = ground_distance_
+					- positions_[i].dot(ground_normal_);
+			if (penetration > 0.0f) {
+				positions_[i] += ground_normal_ * penetration;
+				const float vn = velocities_[i].dot(ground_normal_);
+				if (vn < 0.0f) {
+					velocities_[i] -= ground_normal_ * vn;
+				}
+				// 地面切向摩擦
+				Vector3 &vel = velocities_[i];
+				const Vector3 tangent = vel
+						- ground_normal_ * vel.dot(ground_normal_);
+				vel -= tangent * 0.25f;
+			}
+		}
 		if (velocities_[i].length_squared() < 4.0e-6f) {
 			velocities_[i] = Vector3();
 		}
@@ -532,6 +558,8 @@ void SoilDEMKernel::_bind_methods() {
 			&SoilDEMKernel::set_spherical_gravity);
 	ClassDB::bind_method(D_METHOD("set_planar_gravity", "gravity"),
 			&SoilDEMKernel::set_planar_gravity);
+	ClassDB::bind_method(D_METHOD("set_ground_plane", "normal", "distance"),
+			&SoilDEMKernel::set_ground_plane);
 	ClassDB::bind_method(D_METHOD("set_threads", "count"),
 			&SoilDEMKernel::set_threads);
 	ClassDB::bind_method(D_METHOD("get_thread_count"),

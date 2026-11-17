@@ -35,6 +35,8 @@ public:
 	/// 球心重力：g(r)=g0·(R/(R+alt))²，方向指向球心。默认关闭（平面 -Y）。
 	void set_spherical_gravity(double planet_radius, double surface_gravity);
 	void set_planar_gravity(double gravity);
+	/// 局部地面平面：n·p >= distance 是地表以上；粒子不会穿到下面。
+	void set_ground_plane(const Vector3 &normal, double distance);
 	/// 接触计算的线程数；1 = 单线程，>1 时按粒子下标分段并行。
 	void set_threads(int count);
 	int get_thread_count() const;
@@ -77,6 +79,10 @@ private:
 	bool spherical_gravity_ = false;
 	float planet_radius_ = 3978.87f;
 	float surface_gravity_ = 9.81f;
+
+	bool ground_plane_enabled_ = false;
+	Vector3 ground_normal_ = Vector3(0.0f, 1.0f, 0.0f);
+	float ground_distance_ = 0.0f;
 
 	float tool_x_ = 0.151f;
 	float tool_speed_ = 0.05f;
