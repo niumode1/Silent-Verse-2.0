@@ -30,6 +30,8 @@ var _near_ground_root: Node3D = null
 var _surface_shader: ShaderMaterial = null
 var _player: FirstPersonController = null
 var _near_stream_position: Vector3 = Vector3.ZERO
+## 已生成的格块 {Vector2i(lon_idx, lat_idx): GroundChunkNode}
+var _near_chunk_cache: Dictionary = {}
 
 ## 可见地表网格的顶点半径，供玩家贴地采样
 var _surface_heights: Array = []
@@ -430,52 +432,95 @@ func _setup_near_field_hole() -> void:
 	_surface_shader.set_shader_parameter("hole_radius", near_field_hole_radius)
 
 
-## 在 center 周围生成 n×n 个 8 m 物质格块；静态地表在洞口处被 shader
-## discard，碰撞体仍保留（近场格块提供接触面）。
+## 在 center 周围维护 n×n 个 8 m 物质格块。格块按经纬度网格缓存：
+## 玩家只在跨过 8 m 格线时生成新块、释放离开的块，不会整批重建。
+## 静态地表在洞口处被 shader discard；近场块会按静态地表高度轻微抬高，
+## 保证接触面优先命中可见格块。
 func _generate_near_ground(center: Vector3 = Vector3.ZERO) -> void:
 	if _matter_field == null:
 		return
 	if center.length() < 1.0:
 		center = spawn_point
 
-	if _near_ground_root != null:
-		_near_ground_root.free()
-		_near_ground_root = null
-	_near_ground_root = Node3D.new()
-	_near_ground_root.name = "NearGround"
-	add_child(_near_ground_root)
+	if _near_ground_root == null:
+		_near_ground_root = Node3D.new()
+		_near_ground_root.name = "NearGround"
+		add_child(_near_ground_root)
 	if _surface_shader != null:
 		_surface_shader.set_shader_parameter("hole_center", center)
 
-	var up: Vector3 = center.normalized()
-	var forward: Vector3 = up.cross(Vector3.RIGHT)
-	if forward.length() < 0.001:
-		forward = up.cross(Vector3.FORWARD)
-	forward = forward.normalized()
-	var right: Vector3 = up.cross(forward).normalized()
-
+	var step: float = 8.0 / world_generator.planet_radius
+	var base := _chunk_key(center, step)
 	var n: int = maxi(near_field_chunks, 1)
-	var half: float = float(n - 1) * 0.5
-	var spacing: float = 8.0
-	var count: int = 0
+	var half: int = int((n - 1) / 2)
+	var desired: Dictionary = {}
+	var new_count: int = 0
 	for ix in range(n):
 		for iz in range(n):
-			var side: float = (float(ix) - half) * spacing
-			var fwd: float = (float(iz) - half) * spacing
-			var dir: Vector3 = _displace_dir(up, forward, right, fwd, side,
-				world_generator.planet_radius)
-			var anchor: Vector3 = dir * world_generator.terrain.get_surface_radius(
-				dir * world_generator.planet_radius)
-			var chunk := GroundChunk.new(_matter_field, anchor, right, forward)
-			var node := GroundChunkNode.new()
-			node.name = "NearChunk_%d_%d" % [ix, iz]
-			_near_ground_root.add_child(node)
-			node.setup(chunk)
-			count += 1
+			var key := base + Vector2i(ix - half, iz - half)
+			desired[key] = true
+			if not _near_chunk_cache.has(key):
+				_build_near_chunk(key, step)
+				new_count += 1
+			var node: GroundChunkNode = _near_chunk_cache[key]
+			if node.get_parent() != _near_ground_root:
+				node.reparent(_near_ground_root)
+
+	# 释放离开近场的块
+	for key in _near_chunk_cache.keys():
+		if desired.has(key):
+			continue
+		var node: GroundChunkNode = _near_chunk_cache[key]
+		_near_chunk_cache.erase(key)
+		node.free()
+
 	_near_stream_position = center
-	print("Near ground: ", count, " material chunks around ",
-		snapped(center.length(), 0.1), " m radius, hole ",
-		near_field_hole_radius, " m")
+	print("Near ground: active=", _near_chunk_cache.size(),
+		" new=", new_count, " chunks around ",
+		snapped(center.length(), 0.1), " m")
+
+
+func _build_near_chunk(key: Vector2i, step: float) -> void:
+	var dir := _chunk_dir(key, step)
+	var up: Vector3 = dir.normalized()
+	var lon: float = (float(key.x) + 0.5) * step
+	var forward := Vector3(-sin(lon), 0.0, cos(lon)).normalized()
+	var right: Vector3 = up.cross(forward).normalized()
+	var probe: Vector3 = dir * world_generator.planet_radius
+	var anchor: Vector3 = dir * world_generator.terrain.get_surface_radius(probe)
+	var chunk := GroundChunk.new(_matter_field, anchor, right, forward)
+	var node := GroundChunkNode.new()
+	node.name = "NearChunk_%d_%d" % [key.x, key.y]
+	_near_ground_root.add_child(node)
+	node.setup(chunk)
+
+	# 静态地表和解析地形在 50 m 网格内可能有高差；在块覆盖范围内采样，
+	# 把近场块抬到静态面之上，避免玩家先撞到不可见的静态碰撞体。
+	var lift: float = 0.0
+	for offset in [Vector3.ZERO, right * 3.0, -right * 3.0,
+			forward * 3.0, -forward * 3.0]:
+		var sample_pos: Vector3 = anchor + offset
+		var static_height: float = _sample_mesh_radius(sample_pos)
+		var analytic_height: float = world_generator.terrain.get_surface_radius(
+			sample_pos)
+		lift = maxf(lift, static_height - analytic_height)
+	lift += 0.03
+	node.transform.origin = anchor + up * lift
+	_near_chunk_cache[key] = node
+
+
+func _chunk_key(position: Vector3, step: float) -> Vector2i:
+	var dir: Vector3 = position.normalized()
+	var lat: float = asin(clampf(dir.y, -1.0, 1.0))
+	var lon: float = atan2(dir.z, dir.x)
+	return Vector2i(int(floor(lon / step)), int(floor(lat / step)))
+
+
+func _chunk_dir(key: Vector2i, step: float) -> Vector3:
+	var lon: float = (float(key.x) + 0.5) * step
+	var lat: float = (float(key.y) + 0.5) * step
+	return Vector3(cos(lat) * cos(lon), sin(lat),
+		cos(lat) * sin(lon)).normalized()
 
 
 func _process(_delta: float) -> void:
@@ -484,7 +529,7 @@ func _process(_delta: float) -> void:
 	var position: Vector3 = _player.global_position
 	if position.length() < 1.0 or not _player.is_on_floor():
 		return
-	if position.distance_to(_near_stream_position) < 6.0:
+	if position.distance_to(_near_stream_position) < 4.0:
 		return
 	_generate_near_ground(position)
 
