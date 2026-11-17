@@ -3,9 +3,13 @@
 #include <godot_cpp/core/class_db.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
+#include <mutex>
+#include <queue>
 #include <random>
 #include <thread>
 #include <unordered_map>
@@ -36,6 +40,84 @@ struct CellHash {
 };
 
 } // namespace
+
+namespace godot {
+
+/// 持久线程池：每步只投递任务，不重复创建/销毁线程。
+class ThreadPool {
+public:
+	explicit ThreadPool(int count) {
+		const int n = std::max(1, count);
+		workers_.reserve(n);
+		for (int i = 0; i < n; ++i) {
+			workers_.emplace_back([this]() { worker_loop(); });
+		}
+	}
+
+	~ThreadPool() {
+		{
+			std::lock_guard<std::mutex> lock(mutex_);
+			stop_ = true;
+		}
+		cv_.notify_all();
+		for (auto &worker : workers_) {
+			worker.join();
+		}
+	}
+
+	void parallel_for(int count, const std::function<void(int)> &fn) {
+		if (count <= 0) {
+			return;
+		}
+		{
+			std::lock_guard<std::mutex> lock(mutex_);
+			pending_ += count;
+			for (int i = 0; i < count; ++i) {
+				tasks_.push([this, i, fn]() {
+					fn(i);
+					if (--pending_ == 0) {
+						std::lock_guard<std::mutex> done_lock(done_mutex_);
+						done_cv_.notify_all();
+					}
+				});
+			}
+		}
+		cv_.notify_all();
+		std::unique_lock<std::mutex> lock(done_mutex_);
+		done_cv_.wait(lock, [this]() { return pending_.load() == 0; });
+	}
+
+private:
+	void worker_loop() {
+		while (true) {
+			std::function<void()> task;
+			{
+				std::unique_lock<std::mutex> lock(mutex_);
+				cv_.wait(lock, [this]() { return stop_ || !tasks_.empty(); });
+				if (stop_ && tasks_.empty()) {
+					return;
+				}
+				task = std::move(tasks_.front());
+				tasks_.pop();
+			}
+			task();
+		}
+	}
+
+	std::vector<std::thread> workers_;
+	std::queue<std::function<void()>> tasks_;
+	std::mutex mutex_;
+	std::mutex done_mutex_;
+	std::condition_variable cv_;
+	std::condition_variable done_cv_;
+	std::atomic<int> pending_{0};
+	bool stop_ = false;
+};
+
+} // namespace godot
+
+SoilDEMKernel::SoilDEMKernel() = default;
+SoilDEMKernel::~SoilDEMKernel() = default;
 
 void SoilDEMKernel::configure(int count, double radius, double density,
 		double cohesion, double friction, double stiffness, double damping,
@@ -169,7 +251,15 @@ void SoilDEMKernel::set_planar_gravity(double gravity) {
 }
 
 void SoilDEMKernel::set_threads(int count) {
-	thread_count_ = std::max(1, std::min(count, 16));
+	const int next = std::max(1, std::min(count, 16));
+	if (next == thread_count_ && (next == 1 || pool_)) {
+		return;
+	}
+	pool_.reset();
+	thread_count_ = next;
+	if (thread_count_ > 1) {
+		pool_ = std::make_unique<ThreadPool>(thread_count_);
+	}
 }
 
 int SoilDEMKernel::get_thread_count() const {
@@ -228,23 +318,16 @@ void SoilDEMKernel::step(double dt_in) {
 
 	std::vector<Vector3> forces(n);
 	const int threads = std::max(1, std::min(thread_count_, 16));
-	if (threads <= 1) {
+	if (threads <= 1 || !pool_) {
 		contact_range(0, n, forces);
 	} else {
 		std::vector<std::vector<Vector3>> local_forces(
 				threads, std::vector<Vector3>(n));
-		std::vector<std::thread> workers;
-		workers.reserve(threads);
-		for (int t = 0; t < threads; ++t) {
+		pool_->parallel_for(threads, [&](int t) {
 			const int begin = n * t / threads;
 			const int end = n * (t + 1) / threads;
-			workers.emplace_back([&, t, begin, end]() {
-				contact_range(begin, end, local_forces[t]);
-			});
-		}
-		for (auto &worker : workers) {
-			worker.join();
-		}
+			contact_range(begin, end, local_forces[t]);
+		});
 		for (int t = 0; t < threads; ++t) {
 			for (int i = 0; i < n; ++i) {
 				forces[i] += local_forces[t][i];

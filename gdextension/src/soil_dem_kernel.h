@@ -5,9 +5,12 @@
 #include <godot_cpp/variant/packed_vector3_array.hpp>
 #include <godot_cpp/variant/vector3.hpp>
 
+#include <memory>
 #include <vector>
 
 namespace godot {
+
+class ThreadPool;
 
 /// 土颗粒 DEM 内核。这是 GDScript 原型的原生移植：
 /// 同样的软接触 + Coulomb 摩擦 + 黏聚 + 推板，换取 C++ 的迭代速度。
@@ -15,8 +18,8 @@ class SoilDEMKernel : public RefCounted {
 	GDCLASS(SoilDEMKernel, RefCounted)
 
 public:
-	SoilDEMKernel() = default;
-	~SoilDEMKernel() override = default;
+	SoilDEMKernel();
+	~SoilDEMKernel() override;
 
 	void configure(int count, double radius, double density, double cohesion,
 			double friction, double stiffness, double damping, int seed);
@@ -80,6 +83,7 @@ private:
 	float tool_force_ = 0.0f;
 	int steps_ = 0;
 	int thread_count_ = 1;
+	std::unique_ptr<ThreadPool> pool_;
 };
 
 } // namespace godot
