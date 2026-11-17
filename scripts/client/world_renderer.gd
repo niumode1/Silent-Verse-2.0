@@ -28,6 +28,8 @@ var _trees_root: Node3D = null
 var _matter_field: MatterField = null
 var _near_ground_root: Node3D = null
 var _surface_shader: ShaderMaterial = null
+var _player: FirstPersonController = null
+var _near_stream_position: Vector3 = Vector3.ZERO
 
 ## 可见地表网格的顶点半径，供玩家贴地采样
 var _surface_heights: Array = []
@@ -93,6 +95,7 @@ func _ready() -> void:
 
 	var player: FirstPersonController = get_node_or_null("../FirstPersonController")
 	if player:
+		_player = player
 		# 与可见三角面一致的高度采样，保证上/下坡连续，不按网格跳变
 		player.ground_sampler = Callable(self, "_sample_mesh_radius")
 		player.terrain = world_generator.terrain
@@ -427,20 +430,27 @@ func _setup_near_field_hole() -> void:
 	_surface_shader.set_shader_parameter("hole_radius", near_field_hole_radius)
 
 
-## 出生点周围生成 n×n 个 8 m 物质格块；静态地表在洞口处被 shader discard，
-## 碰撞体仍保留（洞口内近场格块提供更高的接触面）。
-func _generate_near_ground() -> void:
+## 在 center 周围生成 n×n 个 8 m 物质格块；静态地表在洞口处被 shader
+## discard，碰撞体仍保留（近场格块提供接触面）。
+func _generate_near_ground(center: Vector3 = Vector3.ZERO) -> void:
 	if _matter_field == null:
 		return
+	if center.length() < 1.0:
+		center = spawn_point
+
+	if _near_ground_root != null:
+		_near_ground_root.free()
+		_near_ground_root = null
 	_near_ground_root = Node3D.new()
 	_near_ground_root.name = "NearGround"
 	add_child(_near_ground_root)
+	if _surface_shader != null:
+		_surface_shader.set_shader_parameter("hole_center", center)
 
-	var up: Vector3 = spawn_point.normalized()
-	var forward: Vector3 = spawn_look_target - spawn_point
-	forward -= up * forward.dot(up)
+	var up: Vector3 = center.normalized()
+	var forward: Vector3 = up.cross(Vector3.RIGHT)
 	if forward.length() < 0.001:
-		forward = up.cross(Vector3.RIGHT)
+		forward = up.cross(Vector3.FORWARD)
 	forward = forward.normalized()
 	var right: Vector3 = up.cross(forward).normalized()
 
@@ -462,8 +472,21 @@ func _generate_near_ground() -> void:
 			_near_ground_root.add_child(node)
 			node.setup(chunk)
 			count += 1
-	print("Near ground: ", count, " material chunks, hole radius ",
+	_near_stream_position = center
+	print("Near ground: ", count, " material chunks around ",
+		snapped(center.length(), 0.1), " m radius, hole ",
 		near_field_hole_radius, " m")
+
+
+func _process(_delta: float) -> void:
+	if not near_field_enabled or _matter_field == null or _player == null:
+		return
+	var position: Vector3 = _player.global_position
+	if position.length() < 1.0 or not _player.is_on_floor():
+		return
+	if position.distance_to(_near_stream_position) < 6.0:
+		return
+	_generate_near_ground(position)
 
 
 func _displace_dir(up: Vector3, forward: Vector3, right: Vector3,
