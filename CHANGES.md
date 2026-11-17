@@ -168,6 +168,9 @@
   `PlayerBody.get_max_force() × 2`，工具材质用 `bone`（手骨）；
   G 键调试入口已移除。土生成 C++ DEM 粒子，岩石生成独立 ItemEntity
   碎片；移除同时写入 `MatterDelta`。
+- **自动接触触发（M2b）**：手掌的 `ContactForceProbe` 报告与
+  `TerrainBody`/`GroundCollision` 的接触力 >50 N 时，每 300 ms 对真实
+  接触点施力；不再需要按键。headless 无法模拟手部落下，需窗口实测。
 
 ### 4.7 SoilDEM（GDScript 小样）
 

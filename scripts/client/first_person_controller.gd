@@ -57,6 +57,7 @@ var _arm_angles: Array = []         # [hand] = {shoulder_x, shoulder_z, elbow_x,
 var _selected_arm_joint: int = 0
 var _finger_seg_lengths: Array = []   # [hand][finger] = [prox_len, mid_len, dist_len]
 var _palm_bodies: Array = []          # [hand] RigidBody3D 手掌（腕关节末端）
+var _last_hand_ground_strike_ms: int = 0
 var _finger_segments: Array = []      # [hand][finger] = [RigidBody3D x3]
 ## [hand] 拇指 CMC 的过渡刚体：掌骨与手掌之间多串一个无碰撞刚体，
 ## 两个铰链（内收 + 屈曲）合起来才是两自由度 CMC。见 [_build_fingers_for_hand]。
@@ -323,6 +324,7 @@ func _physics_process(delta: float) -> void:
 
 	_update_orientation()
 	_update_hand_physics()
+	_check_hand_ground_contact()
 
 
 
@@ -1916,6 +1918,41 @@ func _update_finger_pads(h: int) -> void:
 						(_pulp_touch[h] as Dictionary)[other.get_instance_id()] = true
 					if not other.freeze:
 						other.apply_force(force, off_other)
+
+
+## M2b：手掌/手指真正接触地面时，按接触力自动对近场地面施力。
+## 不需要按键；每 300 ms 最多触发一次。
+func _check_hand_ground_contact() -> void:
+	if _palm_bodies.is_empty():
+		return
+	var now: int = Time.get_ticks_msec()
+	if now < _last_hand_ground_strike_ms + 300:
+		return
+	var renderer = get_node_or_null("../WorldRenderer")
+	if renderer == null:
+		return
+	for body in _palm_bodies:
+		var probe := body as ContactForceProbe
+		if probe == null or probe.contact_body == null:
+			continue
+		var collider = probe.contact_body
+		if not (collider is Node):
+			continue
+		var collider_name: String = (collider as Node).name
+		if collider_name != "TerrainBody" and collider_name != "GroundCollision":
+			continue
+		var force_n: float = probe.contact_force.length()
+		if force_n < 50.0:
+			continue
+		var point: Vector3 = probe.contact_point
+		if point.length() < 1.0:
+			continue
+		var tool := MaterialDB.get_material("bone")
+		renderer.strike_ground(point, -point.normalized(), force_n, tool,
+			point)
+		_last_hand_ground_strike_ms = now
+		print("[hand] ground contact strike, force=", snapped(force_n, 0.1), " N")
+		return
 
 
 func _update_hand_physics() -> void:

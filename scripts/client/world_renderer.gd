@@ -595,7 +595,8 @@ func debug_strike(player_position: Vector3, look_dir: Vector3) -> Dictionary:
 ## 玩家对近场地面施加一次力。
 ## 土 → DEM 粒子；岩石 → 破裂 ItemEntity 碎片。
 func strike_ground(player_position: Vector3, look_dir: Vector3,
-		force_n: float = 600.0, tool: MaterialProperty = null) -> Dictionary:
+		force_n: float = 600.0, tool: MaterialProperty = null,
+		contact_override: Vector3 = Vector3.ZERO) -> Dictionary:
 	if _near_chunk_cache.is_empty():
 		return {}
 	var up: Vector3 = player_position.normalized()
@@ -603,7 +604,9 @@ func strike_ground(player_position: Vector3, look_dir: Vector3,
 	if forward.length() < 0.001:
 		forward = up.cross(Vector3.RIGHT)
 	forward = forward.normalized()
-	var contact: Vector3 = player_position + forward * 1.0 - up * 0.1
+	var contact: Vector3 = contact_override \
+		if contact_override.length() > 1.0 \
+		else player_position + forward * 1.0 - up * 0.1
 
 	var best: GroundChunkNode = null
 	var best_distance: float = INF

@@ -30,7 +30,9 @@
   `test_dem_cpp` 23/23、`test_client_strike` 6/6。
 - **M2 完成（2026-11-17）**：G 键移除，改为 `primary_action`（左键）；
   力量 = `PlayerBody.get_max_force() × 2`，工具材质用 `bone`（手骨）。
-- M2b 进行中：真正的手/工具接触自动触发还没做。
+- **M2b 已实现（2026-11-17，待窗口实测）**：手掌 `ContactForceProbe`
+  接触 `TerrainBody`/`GroundCollision` 且力 >50 N 时，每 300 ms 自动对
+  接触点施力；不需要按键。
 - M3–M5 未开始。
 - 已有：物质场、行星内部、3D 矿脉、凸碎片、DEM 内核（C++/多线程）、
   近场格块流式、G 键施力、土→粒子、岩石→碎片、粒子合并。
