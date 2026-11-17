@@ -178,34 +178,46 @@ func get_world_center(key: Vector3i) -> Vector3:
 	return anchor + basis * get_local_center(key)
 
 
-## 移除一格，返回这一格的物质（质量守恒的「脱落物」）。
-## 返回 {} 表示该位置没有物质。
-func remove_cell(key: Vector3i) -> Dictionary:
+## 移除一格里的物质。volume_limit < 0 时移除整格；否则只移除指定体积，
+## 格子保留剩余体积（粗格 LOD 下一次敲击不会整格消失）。
+## 返回实际脱离的体积/质量；返回 {} 表示该位置没有物质。
+func remove_cell(key: Vector3i, volume_limit: float = -1.0) -> Dictionary:
 	if not _cells.has(key):
 		return {}
 	var cell: Dictionary = _cells[key]
-	var volume: float = cell_size * cell_size * cell_size
+	var cell_volume: float = cell_size * cell_size * cell_size
+	var remaining: float = float(cell.get("remaining_volume", cell_volume))
+	var remove_volume: float = remaining
+	if volume_limit >= 0.0:
+		remove_volume = minf(volume_limit, remaining)
+	if remove_volume <= 0.0:
+		return {}
 	var density: float = float(cell["density"])
 	var payload := {
 		"composition": (cell["composition"] as Array).duplicate(true),
 		"state": (cell["state"] as Dictionary).duplicate(true),
-		"volume_m3": volume,
-		"mass_kg": volume * density,
+		"volume_m3": remove_volume,
+		"mass_kg": remove_volume * density,
 		"density": density,
 		"world_position": get_world_center(key),
 	}
-	_cells.erase(key)
-	# 有 MatterDelta 时把移除写进稀疏增量（跨块/重载保留）；
-	# 没有 delta 时才用本块临时的 _carved 代埋。
-	if field == null or field.delta == null:
-		_carved.append({
-			"center": get_world_center(key),
-			"radius": cell_size * 0.72,
-		})
-	_solid_count -= 1
-	_total_mass = maxf(_total_mass - volume * density, 0.0)
-	_mesh_dirty = true
-	_node_color_cache.clear()
+	_total_mass = maxf(_total_mass - remove_volume * density, 0.0)
+	remaining -= remove_volume
+	if remaining <= 1.0e-6:
+		_cells.erase(key)
+		# 有 MatterDelta 时把移除写进稀疏增量（跨块/重载保留）；
+		# 没有 delta 时才用本块临时的 _carved 代埋。
+		if field == null or field.delta == null:
+			_carved.append({
+				"center": get_world_center(key),
+				"radius": cell_size * 0.72,
+			})
+		_solid_count -= 1
+		_mesh_dirty = true
+		_node_color_cache.clear()
+	else:
+		cell["remaining_volume"] = remaining
+		_cells[key] = cell
 	return payload
 
 
@@ -261,14 +273,20 @@ func apply_contact(tool: MaterialProperty, contact_world: Vector3,
 	var rocky: bool = String(ground.category) != "soil"
 
 	var cell_volume: float = cell_size * cell_size * cell_size
-	var count: int = clampi(int(round(displaced / cell_volume)), 1, 8)
+	var count: int = clampi(int(ceil(displaced / cell_volume)), 1, 8)
 	var payloads: Array = []
+	var remaining_volume: float = displaced
 	for dy in range(count):
 		var key2 := Vector3i(key.x, key.y - dy, key.z)
-		if _cells.has(key2):
-			var payload := remove_cell(key2)
-			if not payload.is_empty():
-				payloads.append(payload)
+		if not _cells.has(key2):
+			continue
+		var payload := remove_cell(key2, remaining_volume)
+		if payload.is_empty():
+			continue
+		payloads.append(payload)
+		remaining_volume -= float(payload["volume_m3"])
+		if remaining_volume <= 0.0:
+			break
 
 	if payloads.is_empty():
 		return {"contact": result, "removed": {}, "cells_removed": 0}

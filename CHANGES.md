@@ -157,8 +157,9 @@
   65 m 洞口，视觉 shader 同步 discard；patch 半宽 90 m 覆盖洞口。
   不再使用 per-body collision exception。
 - 粒子/物品/玩家现在直接与 patch 或带洞的静态碰撞体接触；
-- 但 4 m 粗格一次施力会整格移除（64 m³），会生成很大的粒子/载荷，
-  这是当前 M3 的主要缺点，需要混合细交互块或部分格子移除。
+- 格子支持**部分移除**：`GroundChunk.remove_cell(key, volume_limit)`
+  只带走 `displaced_volume`，格子在完全移除前保留剩余体积；一次敲击
+  不再整格消失。4 m 粗格对精细挖掘仍偏粗，但不再产生 64 m³ 的瞬间坑。
 - **G 键调试施力**：对前方近场格块调用 `GroundChunk.apply_contact`；
   土 → 最多 1200 个 C++ DEM 粒子（MultiMesh 渲染），
   岩石 → `ItemEntity` 破裂碎片并挂进 `WorldItems`；
@@ -237,7 +238,7 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 & $GODOT --headless --path . scenes/test_geology.tscn       # 27/27
 & $GODOT --headless --path . scenes/test_ground_chunk.tscn  # 19/19
 & $GODOT --headless --path . scenes/test_dem.tscn           # 11/11
-& $GODOT --headless --path . scenes/test_soil_contact.tscn  # 18/18
+& $GODOT --headless --path . scenes/test_soil_contact.tscn  # 19/19
 & $GODOT --headless --path . scenes/test_soil_particles.tscn # 10/10（需先构建）
 & $GODOT --headless --path . scenes/test_particle_budget.tscn # 16/16（需先构建）
 & $GODOT --headless --path . scenes/test_delta_terrain.tscn  # 12/12
