@@ -158,6 +158,8 @@
   土 → 最多 1200 个 C++ DEM 粒子（MultiMesh 渲染），
   岩石 → `ItemEntity` 破裂碎片并挂进 `WorldItems`；
 - 粒子系统在 `_process` 里按固定小步长推进并更新 MultiMesh；
+- 粒子视觉用 `FractureGenerator` 切出的凸碎片当模板（MultiMesh 实例
+  随机旋转），不再是纯球；物理碰撞仍是球；
 - DEM 粒子有**局部地面平面**（`set_ground_plane`），不会穿过地表；
 - 静止粒子每 2 s 通过 `consolidate_slow` 合并回 `MatterDelta`，
   并重建附近的近场格块；

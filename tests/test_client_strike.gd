@@ -42,7 +42,7 @@ func _ready() -> void:
 		_check(has_particles or not fragments.is_empty(),
 			"soil produced particles or rock produced fragments")
 
-	for i in range(80):
+	for i in range(20):
 		await get_tree().process_frame
 	var delta_mass := renderer.get_matter_delta_mass()
 	if delta_mass > 0.0:

@@ -437,6 +437,23 @@ void fragment() {
 
 
 ## 树/物品用的双线性高度：贴合可见网格，不浮空
+## 粒子视觉：用一次凸破裂的碎片当模板，实例随机旋转。
+## 物理碰撞仍是球（C++ 内核），这里只换外形。
+func _make_particle_mesh(radius: float, seed_value: int) -> Mesh:
+	var size := Vector3.ONE * (radius * 2.6)
+	var fragments := FractureGenerator.fracture_box(size, 2, seed_value)
+	if not fragments.is_empty():
+		var mesh := FractureGenerator.build_mesh(fragments[0])
+		if mesh != null:
+			return mesh
+	var sphere := SphereMesh.new()
+	sphere.radius = radius
+	sphere.height = radius * 2.0
+	sphere.radial_segments = 6
+	sphere.rings = 3
+	return sphere
+
+
 func get_particle_system_count() -> int:
 	return _particle_systems.size()
 
@@ -680,12 +697,7 @@ func _spawn_particles(payload: Dictionary, contact: Vector3,
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.instance_count = count
 	multimesh.visible_instance_count = count
-	var sphere := SphereMesh.new()
-	sphere.radius = radius
-	sphere.height = radius * 2.0
-	sphere.radial_segments = 6
-	sphere.rings = 3
-	multimesh.mesh = sphere
+	multimesh.mesh = _make_particle_mesh(radius, seed_value)
 	var mmi := MultiMeshInstance3D.new()
 	mmi.name = "SoilParticles"
 	mmi.multimesh = multimesh
@@ -747,8 +759,10 @@ func _update_particle_systems(delta: float) -> void:
 		multimesh.instance_count = maxi(multimesh.instance_count, count)
 		multimesh.visible_instance_count = count
 		for i in range(count):
+			var basis := Basis(Vector3.UP, fmod(float(i) * 2.399, TAU)) \
+				* Basis(Vector3.RIGHT, fmod(float(i) * 1.117, TAU))
 			multimesh.set_instance_transform(i,
-				Transform3D(Basis.IDENTITY, positions[i]))
+				Transform3D(basis, positions[i]))
 
 
 func _displace_dir(up: Vector3, forward: Vector3, right: Vector3,
