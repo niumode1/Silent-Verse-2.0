@@ -42,11 +42,21 @@ func _init(p_world: WorldGenerator) -> void:
 	_moisture_noise.frequency = 0.02
 
 
+## 位置处的地表半径（含堆积增量）。
+func get_surface_radius_at(position: Vector3) -> float:
+	if terrain == null:
+		return 0.0
+	var radius: float = terrain.get_surface_radius(position)
+	if delta != null:
+		radius += delta.get_height_at(position)
+	return radius
+
+
 ## 位置处离地表的深度（m）。地表以上返回 0。
 func get_depth_at(position: Vector3) -> float:
 	if terrain == null:
 		return 0.0
-	return maxf(terrain.get_surface_radius(position) - position.length(), 0.0)
+	return maxf(get_surface_radius_at(position) - position.length(), 0.0)
 
 
 func set_delta(new_delta: MatterDelta) -> void:

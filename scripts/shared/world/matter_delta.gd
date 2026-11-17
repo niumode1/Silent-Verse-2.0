@@ -49,6 +49,25 @@ func get_deposits() -> Array:
 	return _deposits.duplicate(true)
 
 
+## 某点处堆积物造成的地表抬升（m，径向）。
+## 每个 deposit 按休止角堆成一个圆锥：V = πR³tanφ/3，h(d)=max(0,(R-d)tanφ)。
+func get_height_at(position: Vector3) -> float:
+	var height: float = 0.0
+	for deposit in _deposits:
+		var volume: float = float(deposit["volume_m3"])
+		if volume <= 0.0:
+			continue
+		var state: Dictionary = deposit["state"]
+		var repose: float = deg_to_rad(clampf(
+			float(state.get("angle_of_repose_deg", 32.0)), 5.0, 60.0))
+		var radius: float = pow(3.0 * volume / (PI * tan(repose)),
+			1.0 / 3.0)
+		var distance: float = Vector3(deposit["position"]).distance_to(position)
+		if distance < radius:
+			height += (radius - distance) * tan(repose)
+	return height
+
+
 ## 某点附近堆积物的总质量（kg）。
 func get_mass_near(position: Vector3, radius_m: float) -> float:
 	var total: float = 0.0

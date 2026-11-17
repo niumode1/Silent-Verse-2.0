@@ -67,7 +67,8 @@
 - `get_dem_parameters(position, depth)`：把状态折算成 DEM 的密度/黏聚/
   摩擦/刚度/滚动阻力，供 C++ 粒子内核使用；
 - 可选 `MatterDelta` 增量：`set_delta()` 后，堆积物按质量权重混入采样
-  组成（少量堆积轻微改变，大量堆积主导）。
+  组成（少量堆积轻微改变，大量堆积主导），并通过休止角圆锥抬高
+  `get_surface_radius_at()`。
 
 ### 4.2 PlanetInterior
 
@@ -103,6 +104,9 @@
 - `apply_contact(tool, contact_pos, force, slide, penetration_step, ...)`：
   只接受力和工具几何，调用 `ContactResolver.resolve`；地面屈服后按
   `displaced_volume` 移除格子，返回脱落物质的组成/状态/质量；
+- `rebuild()`：按当前 `MatterField`（含 `MatterDelta`）重新生成格子和
+  表面；堆积增高地形、增加固体格和碰撞；
+- 重建时保留 `_carved`（玩家挖出的空洞）；
 - **注意**：这是过渡原型，最终地面要改成粒子法，尚未接进
   `WorldRenderer`。
 
@@ -165,6 +169,7 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 & $GODOT --headless --path . scenes/test_soil_contact.tscn  # 13/13
 & $GODOT --headless --path . scenes/test_soil_particles.tscn # 10/10（需先构建）
 & $GODOT --headless --path . scenes/test_particle_budget.tscn # 16/16（需先构建）
+& $GODOT --headless --path . scenes/test_delta_terrain.tscn  # 8/8
 & $GODOT --headless --path . scenes/test_dem_cpp.tscn       # 14/14（需先构建）
 ```
 
@@ -196,9 +201,11 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
   实际游戏里需要和客户端/服务端的世界坐标一致。
 - 活跃粒子预算已有工具（`radius_for_budget`），静止粒子能从内核移除
   并写入 [MatterDelta](scripts/shared/world/matter_delta.gd) 稀疏增量
-  （`consolidate_slow` + `deposit`）；`MatterField.set_delta()` 会读取
-  堆积组成。但堆积还没有改变地形高度/碰撞，`GroundChunk` 也还没根据
-  delta 重建——读路径只完成了组成，没完成几何。
+  （`consolidate_slow` + `deposit`）；`MatterField` 会读取堆积组成和
+  高度，`GroundChunk.rebuild()` 能长出新格子和碰撞。
+- 但 delta 只记录「堆积」，没有记录「挖走」；挖出的空洞仍靠
+  `GroundChunk._carved` 临时代理，换块/重载后不会保留。下一步应把
+  移除也写成 delta。
 - 一次移除 0.125 m³ 表土：2 cm 颗粒约 2.7 万；预算 5000 时粒径约 3.6 cm。
 - C++ 只构建了 Windows editor 目标；Linux/导出模板/多线程/GPU 未做。
 - 试验场石台是开发用人工构造；发布前关 `test_yard_enabled`。
@@ -207,7 +214,7 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 
 ## 9. 下一步顺序
 
-1. 让堆积改变地形高度/碰撞，并让 `GroundChunk` 根据 delta 重建；
+1. 把「移除/挖走」也写成 MatterDelta，让空洞跨块/重载保留；
 2. 不规则颗粒/碎块（破裂面）；
 4. 多线程空间分区，扩大活跃区；
 5. 湿泥/水 MPM/SPH；

@@ -90,7 +90,8 @@ func _init(p_field: MatterField, p_anchor: Vector3,
 
 func _build_cells() -> void:
 	_cells.clear()
-	_carved.clear()
+	# 注意：不清空 _carved。重建时保留玩家挖出的空洞，
+	# 堆积增量通过 MatterField.get_surface_radius_at 抬高表面。
 	_node_color_cache.clear()
 	_solid_count = 0
 	_total_mass = 0.0
@@ -108,7 +109,7 @@ func _build_cells() -> void:
 					float(y) * CELL_SIZE,
 					float(z) * CELL_SIZE - half_z)
 				var world_pos: Vector3 = anchor + basis * local
-				var surface: float = field.terrain.get_surface_radius(world_pos)
+				var surface: float = field.get_surface_radius_at(world_pos)
 				if world_pos.length() >= surface:
 					continue  # 空气格
 				var depth: float = surface - world_pos.length()
@@ -127,6 +128,12 @@ func _build_cells() -> void:
 # ============================================================
 # 查询 / 修改
 # ============================================================
+
+## 按当前 MatterField（含 MatterDelta）重新生成格子和表面。
+## 玩家挖出的空洞保留在 _carved 里。
+func rebuild() -> void:
+	_build_cells()
+
 
 func get_solid_count() -> int:
 	return _solid_count
@@ -380,7 +387,7 @@ func _node_local(key: Vector3i) -> Vector3:
 func _node_density(key: Vector3i) -> float:
 	var local := _node_local(key)
 	var world_pos: Vector3 = anchor + basis * local
-	var density: float = field.terrain.get_surface_radius(world_pos) \
+	var density: float = field.get_surface_radius_at(world_pos) \
 		- world_pos.length()
 	for carve in _carved:
 		var radius: float = float(carve["radius"])
