@@ -200,6 +200,7 @@ const JOINT_MOMENT_ARMS := {
 	"finger_mcp": 0.004,  # m
 	"finger_pip": 0.003,  # m
 	"finger_dip": 0.002,  # m
+	"thumb_cmc_adduct": 0.008,  # m，拇指 CMC 内收/外展（对掌）
 }
 
 ## 不主动发力时肌肉维持姿势的静力支撑占比（肌紧张/姿态反射）。

@@ -58,10 +58,13 @@ var STICK_MASS := 0.10
 ## 而不是「收到 65° 就停」：指腹被物体挡在半路，角误差一直存在，
 ## 屈肌就一直出力。目标角刚好等于实际角时肌肉会松力，物体就掉了。
 const GRASP_DEG := [90.0, 100.0, 70.0]
+## 拇指握姿（CMC 屈曲 / MCP / IP）。实测拇指完全合上时握持最稳；
+## 伸直或半屈的拇指会横在木棍高度、把合拢中的木棍顶出去。
+const THUMB_GRASP_DEG := [90.0, 100.0, 70.0]
 ## 生成前手指必须张开到这个角度以内，否则木棍会生成在弯曲的指骨里面
 const OPEN_THRESHOLD_DEG := 15.0
 ## 掌盒半厚（与 first_person_controller.gd 的 palm_shape.size.y/2 一致）
-const PALM_HALF := 0.011
+const PALM_HALF := 0.008
 
 var _controller: Node = null
 var _palm: RigidBody3D = null
@@ -122,9 +125,12 @@ func _set_fingers(per_joint: bool, frac: float = 1.0) -> void:
 		# NO_THUMB：把拇指留在张开位，单独看四指能不能握住。
 		if f == 0 and OS.get_environment("NO_THUMB") != "":
 			continue
-		# 拇指只有 2 节（CMC + MCP），不能按四指的 3 节写死
+		# 拇指三节（CMC 屈曲 / MCP / IP）。对掌靠 CMC 大幅内收把拇指
+		# 横跨到掌心，屈曲只要小幅压住——全屈 80/90/70 会把已经伸到
+		# 木头对面的拇指又卷回掌下。
+		var targets: Array = THUMB_GRASP_DEG if f == 0 else GRASP_DEG
 		for j in range((angles[1][f] as Array).size()):
-			angles[1][f][j] = float(GRASP_DEG[j]) * frac if per_joint else 0.0
+			angles[1][f][j] = float(targets[j]) * frac if per_joint else 0.0
 			# 用墙钟毫秒表示「这一帧肌肉是主动的」。给足余量：headless
 			# 下物理可能比实时慢，800 ms 只覆盖几十帧，合拢还没结束
 			# 肌肉就掉回被动支撑了，结果随机器负载漂移。
@@ -135,11 +141,12 @@ func _fingers_open_enough() -> bool:
 	var segs: Array = _controller.get("_finger_segments")[1]
 	if segs.size() < 5:
 		return false
+	# 拇指的父刚体是 CMC 过渡体（不是手掌），必须用控制器自己的测量，
+	# 它内部走 _finger_parent_body；这里再拿 _palm 当父体会把拇指的
+	# 屈曲轴算错 45°，拇指永远被判成「没张开」。
 	for f in range(5):
-		var ax: Vector3 = _controller.call("_finger_axis", 1, f, 0, _palm)
-		var a: float = rad_to_deg(_controller.call(
-			"_finger_flex_angle", _palm, segs[f][0], ax))
-		if a > OPEN_THRESHOLD_DEG:
+		if absf(float(_controller.call("_finger_flex_deg", 1, f, 0))) \
+				> OPEN_THRESHOLD_DEG:
 			return false
 	return true
 
@@ -448,12 +455,9 @@ func _dump_hand(tag: String) -> void:
 			parts.append("j%d(%s)→(%s)" % [j,
 				"%+.3f %+.3f %+.3f" % [pl.x, pl.y, pl.z],
 				"%+.3f %+.3f %+.3f" % [tip.x, tip.y, tip.z]])
-			var pp: Node3D = _palm if j == 0 else segs[f][j - 1]
-			angs.append("%.0f" % rad_to_deg(_controller.call(
-				"_finger_flex_angle", pp, seg,
-				_controller.call("_finger_axis", 1, f, j, pp))))
+			angs.append("%.0f" % float(_controller.call(
+				"_finger_flex_deg", 1, f, j)))
 		print("    指%d 角%s  %s" % [f, str(angs), "  ".join(parts)])
-
 
 ## 量出握拳后「掌心面 — 近节指骨 — 中节指骨」围出的空腔能容下多大的球。
 ## 搜索范围必须卡在手指真正包住的那一块：y 从掌面往下到中节指骨，
@@ -484,10 +488,10 @@ func _measure_cavity() -> Array:
 						var t: float = clampf((p - c).dot(dir), -half, half)
 						var d: float = (p - (c + dir * t)).length() - 0.009
 						free = minf(free, d)
-				# 掌盒半厚 0.011、半长 0.055、半宽 0.050
+				# 掌盒半厚 PALM_HALF、半长 0.055、半宽 0.050
 				var dx: float = maxf(absf(x) - 0.05, 0.0)
 				var dz: float = maxf(absf(z) - 0.055, 0.0)
-				var dy: float = maxf(maxf(-0.011 - y, y - 0.011), 0.0)
+				var dy: float = maxf(maxf(-PALM_HALF - y, y - PALM_HALF), 0.0)
 				free = minf(free, sqrt(dx * dx + dy * dy + dz * dz))
 				if free > best:
 					best = free

@@ -69,10 +69,17 @@ func _drive(deg: float) -> void:
 	var angles: Array = _controller.get("_finger_angles")
 	var actives: Array = _controller.get("_finger_active_until")
 	var now := Time.get_ticks_msec()
-	# 拇指只有两个关节
+	# 拇指三节（掌骨 / 近节 / 末节）一起开到 deg
 	for j in range((angles[HAND][0] as Array).size()):
 		angles[HAND][0][j] = deg
 		actives[HAND][0][j] = now + 1000000
+	# 四指合拢到握姿：CMC 内收（对掌）的目标角跟四指屈曲程度绑定，
+	# 不把四指合上就看不出拇指到底能不能横跨到握持口袋。
+	var grasp: Array = [90.0, 100.0, 70.0]
+	for f in range(1, 5):
+		for j in range((angles[HAND][f] as Array).size()):
+			angles[HAND][f][j] = float(grasp[j])
+			actives[HAND][f][j] = now + 1000000
 
 
 func _report(deg: float) -> void:
@@ -93,5 +100,36 @@ func _report(deg: float) -> void:
 		* (segs[last].global_transform.basis * Vector3(0, 0, -1))).normalized()
 	tip += seg_dir * (float(lens[last]) * 0.5)
 	var flex: float = float(_controller.call("_finger_flex_deg", HAND, 0, 0))
-	print("拇指 %3.0f°  运动学 %s  物理 %s  指尖(%+.3f %+.3f %+.3f)  实测屈曲 %+.1f°" % [
-		deg, " ".join(kin), " ".join(phy), tip.x, tip.y, tip.z, flex])
+	var add_deg := 0.0
+	var adduct: Array = _controller.get("_thumb_adduct_joint")
+	if adduct.size() > HAND:
+		add_deg = rad_to_deg(float(_controller.call("_joint_angle", adduct[HAND])))
+	print("拇指 %3.0f°  运动学 %s  物理 %s  指尖(%+.3f %+.3f %+.3f)  实测屈曲 %+.1f°  CMC内收 %+.1f°  τ=%.2f" % [
+		deg, " ".join(kin), " ".join(phy), tip.x, tip.y, tip.z, flex, add_deg,
+		float(_controller.call("_joint_torque", "thumb_cmc_adduct", true))])
+	var cradles: Array = _controller.get("_thumb_cradle")
+	if cradles.size() > HAND:
+		var rel: Basis = _palm.global_transform.basis.orthonormalized().inverse() \
+			* (cradles[HAND] as Node3D).global_transform.basis.orthonormalized()
+		print("   cradle x=%s y=%s z=%s" % [
+			str(rel.x.snapped(Vector3.ONE * 0.01)),
+			str(rel.y.snapped(Vector3.ONE * 0.01)),
+			str(rel.z.snapped(Vector3.ONE * 0.01))])
+	# 四指指尖位置，用来判断拇指到底有没有伸进握持口袋
+	var all_segs: Array = (_controller.get("_finger_segments") as Array)[HAND]
+	var all_lens: Array = (_controller.get("_finger_seg_lengths") as Array)[HAND]
+	var tips := []
+	for f in range(1, 5):
+		var seg_arr: Array = all_segs[f]
+		var lens_arr: Array = all_lens[f]
+		var li: int = seg_arr.size() - 1
+		var t: Vector3 = inv * (seg_arr[li] as Node3D).global_transform.origin
+		var d: Vector3 = (inv.basis * ((seg_arr[li] as Node3D).global_transform.basis
+			* Vector3(0, 0, -1))).normalized()
+		t += d * (float(lens_arr[li]) * 0.5)
+		var flexs := ""
+		for j in range(seg_arr.size()):
+			flexs += "%+.0f " % float(_controller.call(
+				"_finger_flex_deg", HAND, f, j))
+		tips.append("(%+.3f %+.3f %+.3f|%s)" % [t.x, t.y, t.z, flexs.strip_edges()])
+	print("   四指尖 %s" % " ".join(tips))
