@@ -24,7 +24,10 @@ static func radius_for_budget(mass_kg: float, density: float,
 
 
 ## 移除速度低于阈值的粒子，返回 {count, mass_kg, particle_mass}。
-static func consolidate_slow(kernel, speed_threshold: float = 0.05) -> Dictionary:
+## 传入 delta 时，把合并后的质量按组成/状态写回物质场增量。
+static func consolidate_slow(kernel, speed_threshold: float = 0.05,
+		delta: MatterDelta = null, position: Vector3 = Vector3.ZERO,
+		composition: Array = [], state: Dictionary = {}) -> Dictionary:
 	if kernel == null:
 		return {"count": 0, "mass_kg": 0.0, "particle_mass": 0.0}
 	var velocities: PackedVector3Array = kernel.get_velocities()
@@ -36,6 +39,10 @@ static func consolidate_slow(kernel, speed_threshold: float = 0.05) -> Dictionar
 	var mass: float = float(indices.size()) * particle_mass
 	if indices.size() > 0:
 		kernel.remove_particles(indices)
+	if delta != null and mass > 0.0 and not composition.is_empty():
+		var density: float = float(state.get("density", 0.0))
+		var volume: float = mass / maxf(density, 1.0e-6)
+		delta.deposit(position, composition, state, mass, volume)
 	return {
 		"count": indices.size(),
 		"mass_kg": mass,

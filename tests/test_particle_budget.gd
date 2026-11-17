@@ -78,9 +78,43 @@ func _ready() -> void:
 			break
 	_check(finite, "remaining positions finite")
 
+	_test_delta_writeback(radius, density, center)
+
 	print("=== Results: %d/%d passed, %d failed ===" % [
 		_pass, _pass + _fail, _fail])
 	get_tree().quit(0)
+
+
+func _test_delta_writeback(radius: float, density: float,
+		center: Vector3) -> void:
+	print("[Delta writeback]")
+	var kernel = ClassDB.instantiate("SoilDEMKernel")
+	kernel.setup_material(radius, density, 0.0, 0.5, 2500.0, 0.2)
+	kernel.set_bounds(center - Vector3(1.0, 1.0, 1.0),
+		center + Vector3(1.0, 1.0, 1.0))
+	kernel.set_spherical_gravity(3978.87, 9.81)
+	var target_mass := 3.0
+	var spawned: int = kernel.spawn_from_mass(target_mass,
+		center + Vector3(0.0, 0.0, 0.3), 0.05, 9)
+	var delta := MatterDelta.new()
+	var composition := [
+		{"material_id": "topsoil", "fraction": 0.6},
+		{"material_id": "clay", "fraction": 0.4},
+	]
+	var state := {"density": density}
+	var result := SoilParticleBudget.consolidate_slow(kernel, 0.05, delta,
+		center + Vector3(0.0, 0.0, 0.3), composition, state)
+	_check(int(result["count"]) == spawned, "all particles consolidated")
+	_check(absf(delta.get_total_mass() - float(result["mass_kg"])) < 1.0e-6,
+		"delta mass equals consolidated mass")
+	_check(absf(delta.get_total_mass() - target_mass)
+		<= float(kernel.get_particle_mass()), "delta mass matches target")
+	var near := delta.get_composition_near(
+		center + Vector3(0.0, 0.0, 0.3), 0.5)
+	_check(not near.is_empty(), "deposit composition readable near position")
+	if not near.is_empty():
+		_check(absf(float(near[0]["fraction"]) - 0.6) < 0.01,
+			"deposit composition preserved (topsoil 0.6)")
 
 
 func _check(condition: bool, label: String) -> void:

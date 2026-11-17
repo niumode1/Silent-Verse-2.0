@@ -134,8 +134,9 @@
 
 - `radius_for_budget(mass, density, max_particles)`：按预算反推粒径。
   例：191.7 kg 表土、密度 1534、预算 5000 → 粒径约 3.6 cm；
-- `consolidate_slow(kernel, speed_threshold)`：找出速度低于阈值的粒子，
-  从内核移除并返回质量；后续应把这些质量写回 `MatterField` 的稀疏增量。
+- `consolidate_slow(kernel, speed_threshold, delta, position, composition,
+  state)`：找出速度低于阈值的粒子，从内核移除并返回质量；传入
+  `MatterDelta` 时把质量/组成/状态写回稀疏增量。
 - 构建：`gdextension\build.bat`；产物 `bin/`（gitignore）；
 - 首次加入后需重跑一次 Godot 编辑器导入（`--headless --editor --quit`）；
 - 测试：[tests/test_dem_cpp.gd](tests/test_dem_cpp.gd) **10/10 通过**。
@@ -161,7 +162,7 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 & $GODOT --headless --path . scenes/test_dem.tscn           # 11/11
 & $GODOT --headless --path . scenes/test_soil_contact.tscn  # 13/13
 & $GODOT --headless --path . scenes/test_soil_particles.tscn # 7/7（需先构建）
-& $GODOT --headless --path . scenes/test_particle_budget.tscn # 11/11（需先构建）
+& $GODOT --headless --path . scenes/test_particle_budget.tscn # 16/16（需先构建）
 & $GODOT --headless --path . scenes/test_dem_cpp.tscn       # 14/14（需先构建）
 ```
 
@@ -192,8 +193,9 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 - 球心重力已接进 C++ 内核（`set_spherical_gravity`），但坐标是球心原点；
   实际游戏里需要和客户端/服务端的世界坐标一致。
 - 活跃粒子预算已有工具（`radius_for_budget`），静止粒子能从内核移除
-  （`consolidate_slow`），但**还没有写回 `MatterField` 的稀疏增量**；
-  也就是说合并只完成了一半。
+  并写入 [MatterDelta](scripts/shared/world/matter_delta.gd) 稀疏增量
+  （`consolidate_slow` + `deposit`）。但 **`MatterField` 还不会读取
+  `MatterDelta`**——读路径还没接，合并仍只完成一半。
 - 一次移除 0.125 m³ 表土：2 cm 颗粒约 2.7 万；预算 5000 时粒径约 3.6 cm。
 - C++ 只构建了 Windows editor 目标；Linux/导出模板/多线程/GPU 未做。
 - 试验场石台是开发用人工构造；发布前关 `test_yard_enabled`。
@@ -202,7 +204,7 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 
 ## 9. 下一步顺序
 
-1. 把 `consolidate_slow` 移除的质量写回 `MatterField` 的稀疏增量；
+1. 让 `MatterField` / `GroundChunk` 读取 `MatterDelta`（目前只写不读）；
 2. 不规则颗粒/碎块（破裂面）；
 4. 多线程空间分区，扩大活跃区；
 5. 湿泥/水 MPM/SPH；
