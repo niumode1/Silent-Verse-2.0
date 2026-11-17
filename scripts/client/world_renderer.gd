@@ -15,9 +15,13 @@ extends Node3D
 @export var test_yard_enabled: bool = true
 ## 近场物质地面：出生点周围 3×3 个 8 m 格块，静态地表在洞口处 discard。
 @export var near_field_enabled: bool = true
-## LOD：玩家周围 220 m 的单块高精度物质地面（5 m 格）
+## LOD：玩家周围 180 m 的单块高精度物质地面（4 m 格）
 @export var near_field_patch_m: float = 180.0
 @export var near_field_cell_m: float = 4.0
+## 精细交互 patch：玩家周围 12 m 的 0.5 m 格
+@export var fine_patch_enabled: bool = true
+@export var fine_patch_m: float = 12.0
+@export var fine_patch_cell_m: float = 0.5
 ## 静态碰撞/视觉洞口半径；patch 半宽必须覆盖洞口 + 50 m 三角面
 @export var near_field_hole_radius: float = 65.0
 @export var near_field_stream_move_m: float = 45.0
@@ -36,10 +40,12 @@ var _player: FirstPersonController = null
 var _near_stream_position: Vector3 = Vector3.ZERO
 ## 已生成的格块 {Vector2i(lon_idx, lat_idx): GroundChunkNode}
 var _near_chunk_cache: Dictionary = {}
+var _fine_patch_center: Vector3 = Vector3.ZERO
 ## 近场内的物体忽略静态地形碰撞，只和可见格块接触
 var _terrain_body: StaticBody3D = null
 var _terrain_collider: CollisionShape3D = null
 var _surface_mesh: ArrayMesh = null
+var _collision_hole_center: Vector3 = Vector3.ZERO
 var _near_patch_center: Vector3 = Vector3.ZERO
 var _matter_delta: MatterDelta = null
 ## [{kernel, multimesh_instance, contact, composition, state}]
@@ -498,6 +504,16 @@ func _generate_near_ground(center: Vector3 = Vector3.ZERO) -> void:
 		_near_ground_root.name = "NearGround"
 		add_child(_near_ground_root)
 
+	# 如果已有 patch 且距离上次中心不远，只更新 shader/碰撞洞中心，
+	# 不重建 patch（避免 2.8 s 卡顿）。
+	var rebuild_threshold: float = near_field_patch_m * 0.4
+	if not _near_chunk_cache.is_empty() \
+			and _near_patch_center.distance_to(center) < rebuild_threshold:
+		if _surface_shader != null:
+			_surface_shader.set_shader_parameter("hole_center", center)
+		_near_stream_position = center
+		return
+
 	for key in _near_chunk_cache.keys():
 		var old: GroundChunkNode = _near_chunk_cache[key]
 		old.free()
@@ -533,9 +549,59 @@ func _generate_near_ground(center: Vector3 = Vector3.ZERO) -> void:
 		_surface_shader.set_shader_parameter("hole_center", center)
 		_surface_shader.set_shader_parameter("hole_radius",
 			near_field_hole_radius)
-	_rebuild_terrain_collision_hole(center, near_field_hole_radius)
+	# 只在洞口中心移动距离超过半径的一半时才重建碰撞
+	if _collision_hole_center.distance_to(center) > near_field_hole_radius * 0.5:
+		_rebuild_terrain_collision_hole(center, near_field_hole_radius)
+		_collision_hole_center = center
 	print("Near ground: 1 patch ", near_field_patch_m, " m / ",
 		near_field_cell_m, " m cells, solid=", patch.get_solid_count(),
+		" built in ", Time.get_ticks_msec() - start_ms, " ms")
+
+	# 在玩家周围叠加精细交互 patch（0.5 m 格），用于精细挖掘
+	if fine_patch_enabled:
+		_generate_fine_patch(center)
+
+
+## 玩家周围 12 m / 0.5 m 格的精细交互 patch。叠加在粗 LOD patch 之上，
+## 用于精细挖掘；每移动 3 m 重建一次。
+func _generate_fine_patch(center: Vector3) -> void:
+	if _matter_field == null:
+		return
+	# 缓存：移动 < 3 m 不重建
+	if _fine_patch_center.length() > 0.0 \
+			and _fine_patch_center.distance_to(center) < 3.0:
+		return
+
+	# 移除旧 fine patch
+	var old_fine = _near_chunk_cache.get(Vector2i(9999, 9999), null) as GroundChunkNode
+	if old_fine != null:
+		old_fine.free()
+		_near_chunk_cache.erase(Vector2i(9999, 9999))
+
+	var up: Vector3 = center.normalized()
+	var probe: Vector3 = up * world_generator.planet_radius
+	var anchor: Vector3 = up * (
+		world_generator.terrain.get_surface_radius(probe)
+		+ fine_patch_cell_m * 0.5)
+	var forward := up.cross(Vector3.RIGHT)
+	if forward.length() < 0.001:
+		forward = up.cross(Vector3.FORWARD)
+	forward = forward.normalized()
+	var right: Vector3 = up.cross(forward).normalized()
+
+	var cells: int = maxi(8, int(round(fine_patch_m
+		/ maxf(fine_patch_cell_m, 0.25))))
+	var start_ms: int = Time.get_ticks_msec()
+	var patch := GroundChunk.new(_matter_field, anchor, right, forward,
+		fine_patch_cell_m, cells, cells, -2, 1)
+	var node := GroundChunkNode.new()
+	node.name = "FinePatch"
+	_near_ground_root.add_child(node)
+	node.setup(patch)
+	_near_chunk_cache[Vector2i(9999, 9999)] = node
+	_fine_patch_center = center
+	print("Fine patch: ", fine_patch_m, " m / ", fine_patch_cell_m,
+		" m cells, solid=", patch.get_solid_count(),
 		" built in ", Time.get_ticks_msec() - start_ms, " ms")
 
 
