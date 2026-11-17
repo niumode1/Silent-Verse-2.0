@@ -62,6 +62,24 @@ func _ready() -> void:
 	_check(absf(float(chunk.get_solid_count()) - float(base_count)) < 0.5,
 		"clearing delta restores base terrain")
 
+	# 挖走也写成 delta：重建后坑还在
+	var removal_delta := MatterDelta.new()
+	removal_delta.remove_volume(point, 0.125, [], 0.0)
+	_check(removal_delta.get_removal_depth_at(point) > 0.1,
+		"removal records a pit depth")
+	field.set_delta(removal_delta)
+	chunk.rebuild()
+	var pit_radius := field.get_surface_radius_at(point)
+	var pit_count := chunk.get_solid_count()
+	_check(pit_radius < base_radius - 0.05,
+		"removal lowers surface (%.2f → %.2f m)" % [base_radius, pit_radius])
+	_check(pit_count < base_count,
+		"removal reduces solid cells (%.0f → %.0f)" % [base_count, pit_count])
+	field.set_delta(null)
+	chunk.rebuild()
+	_check(absf(float(chunk.get_solid_count()) - float(base_count)) < 0.5,
+		"clearing removal restores terrain")
+
 	print("=== Results: %d/%d passed, %d failed ===" % [
 		_pass, _pass + _fail, _fail])
 	get_tree().quit(0)

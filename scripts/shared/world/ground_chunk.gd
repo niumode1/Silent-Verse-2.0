@@ -178,10 +178,13 @@ func remove_cell(key: Vector3i) -> Dictionary:
 		"world_position": get_world_center(key),
 	}
 	_cells.erase(key)
-	_carved.append({
-		"center": get_world_center(key),
-		"radius": CELL_SIZE * 0.72,
-	})
+	# 有 MatterDelta 时把移除写进稀疏增量（跨块/重载保留）；
+	# 没有 delta 时才用本块临时的 _carved 代埋。
+	if field == null or field.delta == null:
+		_carved.append({
+			"center": get_world_center(key),
+			"radius": CELL_SIZE * 0.72,
+		})
 	_solid_count -= 1
 	_total_mass = maxf(_total_mass - volume * density, 0.0)
 	_mesh_dirty = true
@@ -273,6 +276,9 @@ func apply_contact(tool: MaterialProperty, contact_world: Vector3,
 			"fraction": float(comp_acc[id]) / maxf(total_mass, 1.0e-9)})
 	composition.sort_custom(func(a, b):
 		return float(a["fraction"]) > float(b["fraction"]))
+
+	if field.delta != null:
+		field.delta.remove_volume(center, total_volume, composition, total_mass)
 
 	return {
 		"contact": result,

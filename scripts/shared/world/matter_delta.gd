@@ -13,6 +13,9 @@ extends RefCounted
 ## {position, composition, state, mass_kg, volume_m3}
 var _deposits: Array = []
 
+## 被挖走/推走的物质：{position, volume_m3, radius_m, composition, mass_kg}
+var _removals: Array = []
+
 
 func deposit(position: Vector3, composition: Array, state: Dictionary,
 		mass_kg: float, volume_m3: float) -> void:
@@ -47,6 +50,51 @@ func get_total_volume() -> float:
 
 func get_deposits() -> Array:
 	return _deposits.duplicate(true)
+
+
+## 记录一次移除（挖走/推走）。半径按半球体积 V=2/3πr³ 反推。
+func remove_volume(position: Vector3, volume_m3: float,
+		composition: Array = [], mass_kg: float = 0.0) -> void:
+	if volume_m3 <= 0.0:
+		return
+	var radius: float = pow(3.0 * volume_m3 / (2.0 * PI), 1.0 / 3.0)
+	_removals.append({
+		"position": position,
+		"volume_m3": volume_m3,
+		"radius_m": radius,
+		"composition": composition.duplicate(true),
+		"mass_kg": mass_kg,
+	})
+
+
+func get_removal_count() -> int:
+	return _removals.size()
+
+
+func get_total_removed_volume() -> float:
+	var total: float = 0.0
+	for removal in _removals:
+		total += float(removal["volume_m3"])
+	return total
+
+
+## 某点处被挖走造成的表面下陷（m，径向）。按半球坑：d=√(r²-dist²)。
+func get_removal_depth_at(position: Vector3) -> float:
+	var depth: float = 0.0
+	for removal in _removals:
+		var radius: float = float(removal["radius_m"])
+		if radius <= 0.0:
+			continue
+		var distance: float = Vector3(removal["position"]).distance_to(position)
+		if distance < radius:
+			depth = maxf(depth, sqrt(maxf(radius * radius
+				- distance * distance, 0.0)))
+	return depth
+
+
+## 地表净变化：堆积抬高 - 挖走下陷。
+func get_surface_offset(position: Vector3) -> float:
+	return get_height_at(position) - get_removal_depth_at(position)
 
 
 ## 某点处堆积物造成的地表抬升（m，径向）。

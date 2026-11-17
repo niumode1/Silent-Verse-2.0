@@ -48,7 +48,7 @@ func get_surface_radius_at(position: Vector3) -> float:
 		return 0.0
 	var radius: float = terrain.get_surface_radius(position)
 	if delta != null:
-		radius += delta.get_height_at(position)
+		radius += delta.get_surface_offset(position)
 	return radius
 
 
