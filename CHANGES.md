@@ -65,7 +65,9 @@
 - 矿脉按富集度混入组成；
 - 纯查询，不存格子、不存道具；
 - `get_dem_parameters(position, depth)`：把状态折算成 DEM 的密度/黏聚/
-  摩擦/刚度/滚动阻力，供 C++ 粒子内核使用。
+  摩擦/刚度/滚动阻力，供 C++ 粒子内核使用；
+- 可选 `MatterDelta` 增量：`set_delta()` 后，堆积物按质量权重混入采样
+  组成（少量堆积轻微改变，大量堆积主导）。
 
 ### 4.2 PlanetInterior
 
@@ -161,7 +163,7 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 & $GODOT --headless --path . scenes/test_ground_chunk.tscn  # 19/19
 & $GODOT --headless --path . scenes/test_dem.tscn           # 11/11
 & $GODOT --headless --path . scenes/test_soil_contact.tscn  # 13/13
-& $GODOT --headless --path . scenes/test_soil_particles.tscn # 7/7（需先构建）
+& $GODOT --headless --path . scenes/test_soil_particles.tscn # 10/10（需先构建）
 & $GODOT --headless --path . scenes/test_particle_budget.tscn # 16/16（需先构建）
 & $GODOT --headless --path . scenes/test_dem_cpp.tscn       # 14/14（需先构建）
 ```
@@ -194,8 +196,9 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
   实际游戏里需要和客户端/服务端的世界坐标一致。
 - 活跃粒子预算已有工具（`radius_for_budget`），静止粒子能从内核移除
   并写入 [MatterDelta](scripts/shared/world/matter_delta.gd) 稀疏增量
-  （`consolidate_slow` + `deposit`）。但 **`MatterField` 还不会读取
-  `MatterDelta`**——读路径还没接，合并仍只完成一半。
+  （`consolidate_slow` + `deposit`）；`MatterField.set_delta()` 会读取
+  堆积组成。但堆积还没有改变地形高度/碰撞，`GroundChunk` 也还没根据
+  delta 重建——读路径只完成了组成，没完成几何。
 - 一次移除 0.125 m³ 表土：2 cm 颗粒约 2.7 万；预算 5000 时粒径约 3.6 cm。
 - C++ 只构建了 Windows editor 目标；Linux/导出模板/多线程/GPU 未做。
 - 试验场石台是开发用人工构造；发布前关 `test_yard_enabled`。
@@ -204,7 +207,7 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 
 ## 9. 下一步顺序
 
-1. 让 `MatterField` / `GroundChunk` 读取 `MatterDelta`（目前只写不读）；
+1. 让堆积改变地形高度/碰撞，并让 `GroundChunk` 根据 delta 重建；
 2. 不规则颗粒/碎块（破裂面）；
 4. 多线程空间分区，扩大活跃区；
 5. 湿泥/水 MPM/SPH；

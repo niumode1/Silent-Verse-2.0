@@ -49,6 +49,15 @@ func get_deposits() -> Array:
 	return _deposits.duplicate(true)
 
 
+## 某点附近堆积物的总质量（kg）。
+func get_mass_near(position: Vector3, radius_m: float) -> float:
+	var total: float = 0.0
+	for deposit in _deposits:
+		if Vector3(deposit["position"]).distance_to(position) <= radius_m:
+			total += float(deposit["mass_kg"])
+	return total
+
+
 ## 某点附近的堆积物组成（按质量加权，总和 = 1）；没有则返回空数组。
 func get_composition_near(position: Vector3, radius_m: float) -> Array:
 	var acc: Dictionary = {}

@@ -23,6 +23,9 @@ var ore_gen: OreVein = null
 
 var _moisture_noise: FastNoiseLite = null
 
+## 玩家造成的稀疏增量（堆积）；为 null 时只看基底。
+var delta: MatterDelta = null
+
 
 func _init(p_world: WorldGenerator) -> void:
 	world = p_world
@@ -46,9 +49,24 @@ func get_depth_at(position: Vector3) -> float:
 	return maxf(terrain.get_surface_radius(position) - position.length(), 0.0)
 
 
+func set_delta(new_delta: MatterDelta) -> void:
+	delta = new_delta
+
+
 ## 采样一个位置：组成 + 状态。depth_m 由调用方给出（见 get_depth_at）。
 func sample(position: Vector3, depth_m: float) -> Dictionary:
 	var composition := _sample_composition(position, depth_m)
+	if delta != null:
+		var deposit_mass := delta.get_mass_near(position, 0.5)
+		if deposit_mass > 0.0:
+			var deposited := delta.get_composition_near(position, 0.5)
+			if not deposited.is_empty():
+				# 以 0.125 m³ 的参考格子质量做权重：少量堆积只轻微改变
+				# 组成，大量堆积（倒了一堆土）会主导。
+				var reference_mass := get_density(composition) * 0.125
+				var weight := clampf(deposit_mass
+					/ maxf(deposit_mass + reference_mass, 1.0e-9), 0.0, 0.95)
+				composition = _blend_compositions(composition, deposited, weight)
 	var state := _sample_state(position, depth_m, composition)
 	return {
 		"composition": composition,
@@ -83,6 +101,24 @@ func _sample_composition(position: Vector3, depth_m: float) -> Array:
 				"fraction": ore_fraction})
 
 	return _normalize(comp)
+
+
+func _blend_compositions(base: Array, added: Array, weight: float) -> Array:
+	var mix: Dictionary = {}
+	for entry in base:
+		var id := String(entry["material_id"])
+		mix[id] = float(mix.get(id, 0.0)) \
+			+ float(entry["fraction"]) * (1.0 - weight)
+	for entry in added:
+		var id := String(entry["material_id"])
+		mix[id] = float(mix.get(id, 0.0)) \
+			+ float(entry["fraction"]) * weight
+	var out: Array = []
+	for id in mix:
+		var f := float(mix[id])
+		if f > 0.0:
+			out.append({"material_id": String(id), "fraction": f})
+	return _normalize(out)
 
 
 func _normalize(comp: Array) -> Array:

@@ -78,9 +78,38 @@ func _ready() -> void:
 		- float(kernel.get_particle_mass()) * float(spawned))
 	_check(after_diff < 1.0e-6, "particle mass conserved")
 
+	_test_delta_read(field, center)
+
 	print("=== Results: %d/%d passed, %d failed ===" % [
 		_pass, _pass + _fail, _fail])
 	get_tree().quit(0)
+
+
+func _test_delta_read(field: MatterField, center: Vector3) -> void:
+	print("[Delta read]")
+	var base := field.sample(center, 0.5)
+	var base_granite := _fraction(base["composition"], "granite")
+	var delta := MatterDelta.new()
+	delta.deposit(center, [{"material_id": "granite", "fraction": 1.0}],
+		{"density": 2700.0}, 1000.0, 0.37)
+	field.set_delta(delta)
+	var mixed := field.sample(center, 0.5)
+	var mixed_granite := _fraction(mixed["composition"], "granite")
+	_check(mixed_granite > 0.4,
+		"deposit dominates composition near pile (granite %.2f)" % mixed_granite)
+	_check(mixed_granite > base_granite + 0.2,
+		"delta changes sampled composition")
+	field.set_delta(null)
+	var restored := field.sample(center, 0.5)
+	_check(absf(_fraction(restored["composition"], "granite") - base_granite) < 0.001,
+		"clearing delta restores base composition")
+
+
+func _fraction(composition: Array, material_id: String) -> float:
+	for entry in composition:
+		if String(entry["material_id"]) == material_id:
+			return float(entry["fraction"])
+	return 0.0
 
 
 func _build_chunk(world: WorldGenerator, field: MatterField) -> GroundChunk:
