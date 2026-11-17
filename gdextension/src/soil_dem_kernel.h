@@ -1,6 +1,7 @@
 #pragma once
 
 #include <godot_cpp/classes/ref_counted.hpp>
+#include <godot_cpp/variant/packed_int32_array.hpp>
 #include <godot_cpp/variant/packed_vector3_array.hpp>
 #include <godot_cpp/variant/vector3.hpp>
 
@@ -28,9 +29,15 @@ public:
 			int seed);
 	void set_bounds(const Vector3 &min, const Vector3 &max);
 	void set_tool(double x, double speed);
+	/// 球心重力：g(r)=g0·(R/(R+alt))²，方向指向球心。默认关闭（平面 -Y）。
+	void set_spherical_gravity(double planet_radius, double surface_gravity);
+	void set_planar_gravity(double gravity);
 	void step(double dt);
 
 	PackedVector3Array get_positions() const;
+	PackedVector3Array get_velocities() const;
+	/// 移除指定下标的粒子（用于把静止粒子合并回物质场）。
+	void remove_particles(const PackedInt32Array &indices);
 	double get_total_mass() const;
 	double get_particle_mass() const;
 	double get_tool_force() const;
@@ -60,6 +67,10 @@ private:
 
 	Vector3 bounds_min_ = Vector3(-0.15f, 0.0f, -0.15f);
 	Vector3 bounds_max_ = Vector3(0.15f, 0.2f, 0.15f);
+
+	bool spherical_gravity_ = false;
+	float planet_radius_ = 3978.87f;
+	float surface_gravity_ = 9.81f;
 
 	float tool_x_ = 0.151f;
 	float tool_speed_ = 0.05f;

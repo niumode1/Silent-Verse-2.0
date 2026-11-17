@@ -50,15 +50,27 @@ I:\godot\Godot_v4.7.2-stable_win64.exe --headless --path . scenes/test_dem_cpp.t
 ```gdscript
 var k = ClassDB.instantiate("SoilDEMKernel")
 k.configure(count, radius, density, cohesion, friction, stiffness, damping, seed)
+k.setup_material(radius, density, cohesion, friction, stiffness, damping)
+k.clear_particles()
+k.spawn_from_mass(mass, center, spread, seed)   # 返回实际粒子数
 k.set_bounds(min, max)
 k.set_tool(x, speed)
+k.set_spherical_gravity(R, g0)                  # 球心重力
+k.set_planar_gravity(g)
 k.step(dt)
 k.get_positions()
+k.get_velocities()
+k.remove_particles(indices)                     # 静止粒子合并
 k.get_total_mass()
+k.get_particle_mass()
 k.get_tool_force()
 k.get_particle_count()
 k.get_step_count()
 ```
+
+活跃粒子预算见
+[scripts/shared/world/soil_particle_budget.gd](../scripts/shared/world/soil_particle_budget.gd)：
+`radius_for_budget()` 按预算反推粒径，`consolidate_slow()` 移除静止粒子。
 
 物理模型与 [soil_dem.gd](../scripts/shared/world/soil_dem.gd) 一致：
 软弹簧-阻尼接触、Coulomb 摩擦、黏聚、推板、球心/盒边界；质量守恒。

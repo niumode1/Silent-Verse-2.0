@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <random>
 #include <unordered_map>
 #include <vector>
@@ -154,13 +155,40 @@ void SoilDEMKernel::set_tool(double x, double speed) {
 	tool_speed_ = static_cast<float>(speed);
 }
 
+void SoilDEMKernel::set_spherical_gravity(double planet_radius,
+		double surface_gravity) {
+	spherical_gravity_ = true;
+	planet_radius_ = static_cast<float>(planet_radius);
+	surface_gravity_ = static_cast<float>(surface_gravity);
+}
+
+void SoilDEMKernel::set_planar_gravity(double gravity) {
+	spherical_gravity_ = false;
+	surface_gravity_ = static_cast<float>(gravity);
+}
+
 void SoilDEMKernel::step(double dt_in) {
 	if (positions_.empty()) {
 		return;
 	}
 	const float dt = static_cast<float>(dt_in);
 	const int n = static_cast<int>(positions_.size());
-	std::vector<Vector3> forces(n, Vector3(0.0f, GRAVITY * mass_, 0.0f));
+	std::vector<Vector3> forces(n);
+	for (int i = 0; i < n; ++i) {
+		Vector3 gravity(0.0f, -surface_gravity_, 0.0f);
+		if (spherical_gravity_) {
+			const Vector3 &p = positions_[i];
+			const float r = p.length();
+			if (r > 1.0f) {
+				const float altitude = std::max(r - planet_radius_, 0.0f);
+				const float ratio = planet_radius_
+						/ (planet_radius_ + altitude);
+				const float magnitude = surface_gravity_ * ratio * ratio;
+				gravity = -p / r * magnitude;
+			}
+		}
+		forces[i] = gravity * mass_;
+	}
 
 	const float cell = radius_ * 2.0f + 0.002f;
 	std::unordered_map<CellKey, std::vector<int>, CellHash> buckets;
@@ -313,6 +341,32 @@ PackedVector3Array SoilDEMKernel::get_positions() const {
 	return out;
 }
 
+PackedVector3Array SoilDEMKernel::get_velocities() const {
+	PackedVector3Array out;
+	const int n = static_cast<int>(velocities_.size());
+	out.resize(n);
+	for (int i = 0; i < n; ++i) {
+		out[i] = velocities_[i];
+	}
+	return out;
+}
+
+void SoilDEMKernel::remove_particles(const PackedInt32Array &indices) {
+	std::vector<int> sorted;
+	sorted.reserve(indices.size());
+	for (int i = 0; i < indices.size(); ++i) {
+		const int index = indices[i];
+		if (index >= 0 && index < static_cast<int>(positions_.size())) {
+			sorted.push_back(index);
+		}
+	}
+	std::sort(sorted.begin(), sorted.end(), std::greater<int>());
+	for (int index : sorted) {
+		positions_.erase(positions_.begin() + index);
+		velocities_.erase(velocities_.begin() + index);
+	}
+}
+
 double SoilDEMKernel::get_total_mass() const {
 	return static_cast<double>(mass_) * static_cast<double>(positions_.size());
 }
@@ -351,9 +405,18 @@ void SoilDEMKernel::_bind_methods() {
 			&SoilDEMKernel::set_bounds);
 	ClassDB::bind_method(D_METHOD("set_tool", "x", "speed"),
 			&SoilDEMKernel::set_tool);
+	ClassDB::bind_method(D_METHOD("set_spherical_gravity", "planet_radius",
+								 "surface_gravity"),
+			&SoilDEMKernel::set_spherical_gravity);
+	ClassDB::bind_method(D_METHOD("set_planar_gravity", "gravity"),
+			&SoilDEMKernel::set_planar_gravity);
 	ClassDB::bind_method(D_METHOD("step", "dt"), &SoilDEMKernel::step);
 	ClassDB::bind_method(D_METHOD("get_positions"),
 			&SoilDEMKernel::get_positions);
+	ClassDB::bind_method(D_METHOD("get_velocities"),
+			&SoilDEMKernel::get_velocities);
+	ClassDB::bind_method(D_METHOD("remove_particles", "indices"),
+			&SoilDEMKernel::remove_particles);
 	ClassDB::bind_method(D_METHOD("get_total_mass"),
 			&SoilDEMKernel::get_total_mass);
 	ClassDB::bind_method(D_METHOD("get_particle_mass"),

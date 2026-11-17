@@ -124,6 +124,18 @@
 - `setup_material` / `clear_particles` / `spawn_from_mass`：按脱落物质的
   质量和 `MatterField.get_dem_parameters()` 的参数生成粒子；
 - `get_particle_mass`：单个粒子质量，用于核对质量守恒；
+- `set_spherical_gravity(R, g0)`：球心重力 `g(r)=g0·(R/(R+alt))²`，
+  方向指向球心；`set_planar_gravity(g)` 回到固定 -Y；
+- `get_velocities` / `remove_particles`：供静止粒子合并使用。
+
+### 5.1 活跃粒子预算
+
+[scripts/shared/world/soil_particle_budget.gd](scripts/shared/world/soil_particle_budget.gd)
+
+- `radius_for_budget(mass, density, max_particles)`：按预算反推粒径。
+  例：191.7 kg 表土、密度 1534、预算 5000 → 粒径约 3.6 cm；
+- `consolidate_slow(kernel, speed_threshold)`：找出速度低于阈值的粒子，
+  从内核移除并返回质量；后续应把这些质量写回 `MatterField` 的稀疏增量。
 - 构建：`gdextension\build.bat`；产物 `bin/`（gitignore）；
 - 首次加入后需重跑一次 Godot 编辑器导入（`--headless --editor --quit`）；
 - 测试：[tests/test_dem_cpp.gd](tests/test_dem_cpp.gd) **10/10 通过**。
@@ -149,7 +161,8 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 & $GODOT --headless --path . scenes/test_dem.tscn           # 11/11
 & $GODOT --headless --path . scenes/test_soil_contact.tscn  # 13/13
 & $GODOT --headless --path . scenes/test_soil_particles.tscn # 7/7（需先构建）
-& $GODOT --headless --path . scenes/test_dem_cpp.tscn       # 10/10（需先构建）
+& $GODOT --headless --path . scenes/test_particle_budget.tscn # 11/11（需先构建）
+& $GODOT --headless --path . scenes/test_dem_cpp.tscn       # 14/14（需先构建）
 ```
 
 旧测试仍可跑：`test_items` 39/39，其余见 HANDOFF §2。
@@ -176,9 +189,12 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
   `SoilDEMKernel.spawn_from_mass` 按质量生成粒子（test_soil_particles
   7/7）。但还没有把它接进实际游戏循环/渲染。
 - C++ 内核仍是球形粒子；不规则颗粒/破裂面、MPM/SPH 都没做。
-- 粒子重力仍是固定的 -Y；球形行星的球心重力还没接进 C++ 内核。
-- 一次移除 0.125 m³ 表土会产生约 2.7 万个 2 cm 粒子——活跃区预算和
-  粒子合并回物质场的策略必须先定。
+- 球心重力已接进 C++ 内核（`set_spherical_gravity`），但坐标是球心原点；
+  实际游戏里需要和客户端/服务端的世界坐标一致。
+- 活跃粒子预算已有工具（`radius_for_budget`），静止粒子能从内核移除
+  （`consolidate_slow`），但**还没有写回 `MatterField` 的稀疏增量**；
+  也就是说合并只完成了一半。
+- 一次移除 0.125 m³ 表土：2 cm 颗粒约 2.7 万；预算 5000 时粒径约 3.6 cm。
 - C++ 只构建了 Windows editor 目标；Linux/导出模板/多线程/GPU 未做。
 - 试验场石台是开发用人工构造；发布前关 `test_yard_enabled`。
 - `PlanetInterior` 的地壳厚度是为可玩性放大的，不是地球比例。
@@ -186,9 +202,8 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 
 ## 9. 下一步顺序
 
-1. 把球心重力接进 C++ 内核（目前是固定 -Y）；
-2. 活跃粒子预算 + 静止粒子合并回物质场（否则一次破坏就 2.7 万粒子）；
-3. 不规则颗粒/碎块（破裂面）；
+1. 把 `consolidate_slow` 移除的质量写回 `MatterField` 的稀疏增量；
+2. 不规则颗粒/碎块（破裂面）；
 4. 多线程空间分区，扩大活跃区；
 5. 湿泥/水 MPM/SPH；
 6. 接入渲染/网络；服务端权威。

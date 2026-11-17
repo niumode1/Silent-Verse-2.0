@@ -26,6 +26,7 @@ func _ready() -> void:
 	_test_basic(cls)
 	_test_determinism()
 	_test_states()
+	_test_spherical_gravity()
 	_benchmark(1000)
 	_benchmark(5000)
 
@@ -85,6 +86,45 @@ func _test_states() -> void:
 		"tool feels all three states")
 	_check(f_wet > f_dry * 1.1, "wet clay resists more than dry sand")
 	_check(f_compact > f_dry * 1.1, "compacted soil resists more than dry")
+
+
+func _test_spherical_gravity() -> void:
+	print("[Spherical Gravity]")
+	var k = ClassDB.instantiate("SoilDEMKernel")
+	k.setup_material(0.01, 1600.0, 0.0, 0.5, 2500.0, 0.2)
+	var surface := Vector3(0.0, 0.0, 3978.87)
+	k.set_bounds(surface - Vector3(0.6, 0.6, 0.6),
+		surface + Vector3(0.6, 0.6, 0.6))
+	k.set_spherical_gravity(3978.87, 9.81)
+	var spawned = k.spawn_from_mass(3.0, surface + Vector3(0.0, 0.0, 0.2),
+		0.05, 11)
+	_check(int(spawned) > 0, "particles spawned near surface")
+	var before := _mean_radius(k)
+	var mass_before := float(k.get_total_mass())
+	for i in range(60):
+		k.step(DT)
+	var after := _mean_radius(k)
+	var finite := true
+	for p in k.get_positions():
+		if not p.is_finite():
+			finite = false
+			break
+	_check(finite, "positions finite under spherical gravity")
+	_check(after < before - 0.02,
+		"particles fall toward planet center (%.2f → %.2f m)"
+		% [before, after])
+	_check(absf(float(k.get_total_mass()) - mass_before) < 1e-6,
+		"mass conserved under spherical gravity")
+
+
+func _mean_radius(k) -> float:
+	var positions: PackedVector3Array = k.get_positions()
+	if positions.is_empty():
+		return 0.0
+	var total := 0.0
+	for p in positions:
+		total += p.length()
+	return total / float(positions.size())
 
 
 func _make_state(kind: String):
