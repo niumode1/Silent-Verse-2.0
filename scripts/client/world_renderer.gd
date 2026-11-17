@@ -13,6 +13,10 @@ extends Node3D
 @export var tree_scale: float = 1.0
 ## 内容开发期：在出生点前方生成材料试验场。正式发布前应关掉。
 @export var test_yard_enabled: bool = true
+## 近场物质地面：出生点周围 3×3 个 8 m 格块，静态地表在洞口处 discard。
+@export var near_field_enabled: bool = true
+@export var near_field_chunks: int = 3
+@export var near_field_hole_radius: float = 12.0
 
 var world_generator: WorldGenerator = null
 var spawn_point: Vector3 = Vector3.ZERO
@@ -21,6 +25,9 @@ var spawn_look_target: Vector3 = Vector3.ZERO
 var _materials: Dictionary = {}
 var _items_root: Node3D = null
 var _trees_root: Node3D = null
+var _matter_field: MatterField = null
+var _near_ground_root: Node3D = null
+var _surface_shader: ShaderMaterial = null
 
 ## 可见地表网格的顶点半径，供玩家贴地采样
 var _surface_heights: Array = []
@@ -64,6 +71,10 @@ func _ready() -> void:
 	_setup_environment()
 	_generate_surface_mesh()
 	_find_spawn_point(world_items)
+	if near_field_enabled:
+		_matter_field = MatterField.new(world_generator)
+		_setup_near_field_hole()
+		_generate_near_ground()
 	if test_yard_enabled:
 		add_child(MaterialTestYard.build_platform(world_generator, spawn_point,
 			spawn_look_target))
@@ -352,15 +363,39 @@ func _generate_surface_mesh() -> void:
 		printerr("WorldRenderer: surface mesh generation failed")
 		return
 
-	var mat := StandardMaterial3D.new()
-	mat.vertex_color_use_as_albedo = true
-	mat.roughness = 1.0
-	mat.metallic = 0.0
-
 	var mi := MeshInstance3D.new()
 	mi.name = "TerrainSurface"
 	mi.mesh = mesh
-	mi.material_override = mat
+	if near_field_enabled:
+		_surface_shader = ShaderMaterial.new()
+		var shader := Shader.new()
+		shader.code = """
+shader_type spatial;
+uniform vec3 hole_center = vec3(0.0);
+uniform float hole_radius = 0.0;
+varying vec3 world_pos;
+void vertex() {
+	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+}
+void fragment() {
+	if (hole_radius > 0.0
+			&& distance(world_pos, hole_center) < hole_radius) {
+		discard;
+	}
+	ALBEDO = COLOR.rgb;
+	ROUGHNESS = 1.0;
+	METALLIC = 0.0;
+}
+"""
+		_surface_shader.shader = shader
+		_surface_shader.set_shader_parameter("hole_radius", 0.0)
+		mi.material_override = _surface_shader
+	else:
+		var mat := StandardMaterial3D.new()
+		mat.vertex_color_use_as_albedo = true
+		mat.roughness = 1.0
+		mat.metallic = 0.0
+		mi.material_override = mat
 	add_child(mi)
 
 	# 地形碰撞体（供角色/物品物理使用）
@@ -385,6 +420,61 @@ func _generate_surface_mesh() -> void:
 
 
 ## 树/物品用的双线性高度：贴合可见网格，不浮空
+func _setup_near_field_hole() -> void:
+	if _surface_shader == null:
+		return
+	_surface_shader.set_shader_parameter("hole_center", spawn_point)
+	_surface_shader.set_shader_parameter("hole_radius", near_field_hole_radius)
+
+
+## 出生点周围生成 n×n 个 8 m 物质格块；静态地表在洞口处被 shader discard，
+## 碰撞体仍保留（洞口内近场格块提供更高的接触面）。
+func _generate_near_ground() -> void:
+	if _matter_field == null:
+		return
+	_near_ground_root = Node3D.new()
+	_near_ground_root.name = "NearGround"
+	add_child(_near_ground_root)
+
+	var up: Vector3 = spawn_point.normalized()
+	var forward: Vector3 = spawn_look_target - spawn_point
+	forward -= up * forward.dot(up)
+	if forward.length() < 0.001:
+		forward = up.cross(Vector3.RIGHT)
+	forward = forward.normalized()
+	var right: Vector3 = up.cross(forward).normalized()
+
+	var n: int = maxi(near_field_chunks, 1)
+	var half: float = float(n - 1) * 0.5
+	var spacing: float = 8.0
+	var count: int = 0
+	for ix in range(n):
+		for iz in range(n):
+			var side: float = (float(ix) - half) * spacing
+			var fwd: float = (float(iz) - half) * spacing
+			var dir: Vector3 = _displace_dir(up, forward, right, fwd, side,
+				world_generator.planet_radius)
+			var anchor: Vector3 = dir * world_generator.terrain.get_surface_radius(
+				dir * world_generator.planet_radius)
+			var chunk := GroundChunk.new(_matter_field, anchor, right, forward)
+			var node := GroundChunkNode.new()
+			node.name = "NearChunk_%d_%d" % [ix, iz]
+			_near_ground_root.add_child(node)
+			node.setup(chunk)
+			count += 1
+	print("Near ground: ", count, " material chunks, hole radius ",
+		near_field_hole_radius, " m")
+
+
+func _displace_dir(up: Vector3, forward: Vector3, right: Vector3,
+		fwd: float, side: float, radius: float) -> Vector3:
+	var tangent: Vector3 = forward * fwd + right * side
+	if tangent.length() < 0.0001:
+		return up
+	var axis: Vector3 = up.cross(tangent.normalized()).normalized()
+	return up.rotated(axis, tangent.length() / radius).normalized()
+
+
 func _sample_mesh_radius(at_position: Vector3) -> float:
 	if _surface_heights.is_empty() or _surface_steps_phi <= 0 or _surface_steps_theta <= 0:
 		return world_generator.terrain.get_surface_radius(at_position)
