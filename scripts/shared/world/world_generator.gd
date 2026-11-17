@@ -32,6 +32,7 @@ var terrain: Terrain = null
 var ore_gen: OreVein = null
 var soil_grid: SoilGrid = null
 var climate: Climate = null
+var interior: PlanetInterior = null
 
 ## 活跃的树木实例 {position_key: TreeGrowth}
 var trees: Dictionary = {}
@@ -58,7 +59,8 @@ func generate() -> void:
 	terrain.build()
 	generation_progress = 0.2
 
-	# 2. 矿产
+	# 2. 矿产与行星内部
+	interior = PlanetInterior.new(planet_radius, terrain)
 	ore_gen = OreVein.new(_seed_value)
 	generation_progress = 0.4
 
@@ -100,6 +102,8 @@ func query_world(position: Vector3) -> Dictionary:
 		"soil": {},
 		"temperature": 0.0,
 		"precipitation": 0.0,
+		"depth_m": 0.0,
+		"interior": {},
 	}
 
 	if not is_generated:
@@ -122,6 +126,16 @@ func query_world(position: Vector3) -> Dictionary:
 
 	if is_land and soil_grid:
 		result["soil"] = soil_grid.get_soil_at(position)
+
+	# 地下信息：深度按本地地表算，内部结构按球心半径算
+	var depth_m: float = maxf(terrain.get_surface_radius(position)
+		- position.length(), 0.0)
+	result["depth_m"] = depth_m
+	if interior != null:
+		result["interior"] = interior.get_state_at(position)
+		if is_land:
+			result["ores_underground"] = ore_gen.get_ore_deposits_at_depth(
+				position, depth_m, terrain)
 
 	return result
 
