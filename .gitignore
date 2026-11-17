@@ -28,3 +28,6 @@ user://
 third_party/
 build/
 bin/
+
+# Editor
+.vscode/

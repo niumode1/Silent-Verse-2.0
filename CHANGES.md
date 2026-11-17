@@ -121,6 +121,9 @@
 - [silent_verse_particles.gdextension](silent_verse_particles.gdextension)
   使用 editor 目标；
 - `SoilDEMKernel`：与 GDScript DEM 同一套模型（软接触/摩擦/黏聚/推板）；
+- `setup_material` / `clear_particles` / `spawn_from_mass`：按脱落物质的
+  质量和 `MatterField.get_dem_parameters()` 的参数生成粒子；
+- `get_particle_mass`：单个粒子质量，用于核对质量守恒；
 - 构建：`gdextension\build.bat`；产物 `bin/`（gitignore）；
 - 首次加入后需重跑一次 Godot 编辑器导入（`--headless --editor --quit`）；
 - 测试：[tests/test_dem_cpp.gd](tests/test_dem_cpp.gd) **10/10 通过**。
@@ -145,6 +148,7 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 & $GODOT --headless --path . scenes/test_ground_chunk.tscn  # 19/19
 & $GODOT --headless --path . scenes/test_dem.tscn           # 11/11
 & $GODOT --headless --path . scenes/test_soil_contact.tscn  # 13/13
+& $GODOT --headless --path . scenes/test_soil_particles.tscn # 7/7（需先构建）
 & $GODOT --headless --path . scenes/test_dem_cpp.tscn       # 10/10（需先构建）
 ```
 
@@ -168,10 +172,13 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 ## 8. 还没做 / 坑
 
 - `GroundChunk` 尚未接进渲染/碰撞；客户端地面仍是静态三角网 + 试验场。
-- 接触力 → 移除物质的链路已通（`GroundChunk.apply_contact`），但脱落
-  物质还没自动生成 DEM 粒子；目前返回的是组成/质量载荷。
-- C++ 内核仍是球形粒子；不规则颗粒/破裂面、MPM/SPH 都没做；
-  `MatterField.get_dem_parameters` 已能导出参数，但还没自动灌进 C++ 内核。
+- 接触力 → 移除物质 → DEM 粒子已通：`GroundChunk.apply_contact` 返回载荷，
+  `SoilDEMKernel.spawn_from_mass` 按质量生成粒子（test_soil_particles
+  7/7）。但还没有把它接进实际游戏循环/渲染。
+- C++ 内核仍是球形粒子；不规则颗粒/破裂面、MPM/SPH 都没做。
+- 粒子重力仍是固定的 -Y；球形行星的球心重力还没接进 C++ 内核。
+- 一次移除 0.125 m³ 表土会产生约 2.7 万个 2 cm 粒子——活跃区预算和
+  粒子合并回物质场的策略必须先定。
 - C++ 只构建了 Windows editor 目标；Linux/导出模板/多线程/GPU 未做。
 - 试验场石台是开发用人工构造；发布前关 `test_yard_enabled`。
 - `PlanetInterior` 的地壳厚度是为可玩性放大的，不是地球比例。
@@ -179,9 +186,8 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 
 ## 9. 下一步顺序
 
-1. 把 `MatterField.get_dem_parameters()` 自动传进 C++ 内核（目前测试仍
-   用显式参数）；
-2. 把 `GroundChunk.apply_contact` 返回的脱落载荷自动转成 DEM 粒子；
+1. 把球心重力接进 C++ 内核（目前是固定 -Y）；
+2. 活跃粒子预算 + 静止粒子合并回物质场（否则一次破坏就 2.7 万粒子）；
 3. 不规则颗粒/碎块（破裂面）；
 4. 多线程空间分区，扩大活跃区；
 5. 湿泥/水 MPM/SPH；

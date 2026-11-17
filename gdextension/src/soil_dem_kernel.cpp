@@ -52,6 +52,54 @@ void SoilDEMKernel::configure(int count, double radius, double density,
 	_populate();
 }
 
+void SoilDEMKernel::setup_material(double radius, double density,
+		double cohesion, double friction, double stiffness, double damping) {
+	radius_ = static_cast<float>(radius);
+	density_ = static_cast<float>(density);
+	cohesion_ = static_cast<float>(cohesion);
+	friction_ = static_cast<float>(friction);
+	stiffness_ = static_cast<float>(stiffness);
+	damping_ratio_ = static_cast<float>(damping);
+	mass_ = density_ * (4.0f / 3.0f) * PI_F * radius_ * radius_ * radius_;
+	clear_particles();
+}
+
+void SoilDEMKernel::clear_particles() {
+	positions_.clear();
+	velocities_.clear();
+	steps_ = 0;
+	tool_force_ = 0.0f;
+}
+
+int SoilDEMKernel::spawn_from_mass(double mass, const Vector3 &center,
+		double spread, int seed) {
+	if (mass <= 0.0 || mass_ <= 0.0f) {
+		return 0;
+	}
+	const int count = std::max(1, static_cast<int>(std::round(mass / mass_)));
+	std::mt19937 rng(static_cast<uint32_t>(seed));
+	std::uniform_real_distribution<float> uniform(0.0f, 1.0f);
+	const float max_spread = static_cast<float>(std::max(spread, 0.0));
+	positions_.reserve(positions_.size() + count);
+	velocities_.reserve(velocities_.size() + count);
+	for (int i = 0; i < count; ++i) {
+		Vector3 offset;
+		if (max_spread > 0.0f) {
+			// 球内均匀采样
+			const float u = uniform(rng);
+			const float theta = uniform(rng) * 2.0f * PI_F;
+			const float z = 2.0f * uniform(rng) - 1.0f;
+			const float r_xy = std::sqrt(std::max(0.0f, 1.0f - z * z));
+			const float r = max_spread * std::cbrt(u);
+			offset = Vector3(r * r_xy * std::cos(theta),
+					r * r_xy * std::sin(theta), r * z);
+		}
+		positions_.push_back(center + offset);
+		velocities_.push_back(Vector3());
+	}
+	return count;
+}
+
 void SoilDEMKernel::_populate() {
 	positions_.clear();
 	velocities_.clear();
@@ -269,6 +317,10 @@ double SoilDEMKernel::get_total_mass() const {
 	return static_cast<double>(mass_) * static_cast<double>(positions_.size());
 }
 
+double SoilDEMKernel::get_particle_mass() const {
+	return static_cast<double>(mass_);
+}
+
 double SoilDEMKernel::get_tool_force() const {
 	return static_cast<double>(tool_force_);
 }
@@ -286,6 +338,15 @@ void SoilDEMKernel::_bind_methods() {
 								 "cohesion", "friction", "stiffness", "damping",
 								 "seed"),
 			&SoilDEMKernel::configure);
+	ClassDB::bind_method(D_METHOD("setup_material", "radius", "density",
+								 "cohesion", "friction", "stiffness",
+								 "damping"),
+			&SoilDEMKernel::setup_material);
+	ClassDB::bind_method(D_METHOD("clear_particles"),
+			&SoilDEMKernel::clear_particles);
+	ClassDB::bind_method(D_METHOD("spawn_from_mass", "mass", "center",
+								 "spread", "seed"),
+			&SoilDEMKernel::spawn_from_mass);
 	ClassDB::bind_method(D_METHOD("set_bounds", "min", "max"),
 			&SoilDEMKernel::set_bounds);
 	ClassDB::bind_method(D_METHOD("set_tool", "x", "speed"),
@@ -295,6 +356,8 @@ void SoilDEMKernel::_bind_methods() {
 			&SoilDEMKernel::get_positions);
 	ClassDB::bind_method(D_METHOD("get_total_mass"),
 			&SoilDEMKernel::get_total_mass);
+	ClassDB::bind_method(D_METHOD("get_particle_mass"),
+			&SoilDEMKernel::get_particle_mass);
 	ClassDB::bind_method(D_METHOD("get_tool_force"),
 			&SoilDEMKernel::get_tool_force);
 	ClassDB::bind_method(D_METHOD("get_particle_count"),

@@ -19,12 +19,20 @@ public:
 
 	void configure(int count, double radius, double density, double cohesion,
 			double friction, double stiffness, double damping, int seed);
+	/// 只设置材料参数和粒径，不生成粒子（用于从脱落物质生成粒子）。
+	void setup_material(double radius, double density, double cohesion,
+			double friction, double stiffness, double damping);
+	void clear_particles();
+	/// 按质量在 center 附近生成粒子，返回实际粒子数。
+	int spawn_from_mass(double mass, const Vector3 &center, double spread,
+			int seed);
 	void set_bounds(const Vector3 &min, const Vector3 &max);
 	void set_tool(double x, double speed);
 	void step(double dt);
 
 	PackedVector3Array get_positions() const;
 	double get_total_mass() const;
+	double get_particle_mass() const;
 	double get_tool_force() const;
 	int get_particle_count() const;
 	int get_step_count() const;
