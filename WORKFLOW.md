@@ -6,46 +6,70 @@
 
 ## 里程碑 M：近场物质地面闭环
 
-| 任务 | 内容 | 验收 |
+| 任务 | 状态 | 内容 |
 |---|---|---|
-| M1 | DEM 粒子与地面接触；静止粒子合并回 `MatterDelta` | 粒子不穿地；合并后质量守恒；格块重建 |
-| M2 | 主要动作（左键）替代 G 键，用玩家身体力量 + 手骨材质施力 | 鼠标左键即可，力量随 `PlayerBody.current_strength` |
-| M2b | 手/工具**实际接触**自动触发（不是按键） | 手碰到地面时按接触力产生颗粒/碎片 |
-| M3 | 近场/远场碰撞真正统一（静态碰撞开洞或分层） | 近场不再依赖 per-body exception |
-| M4 | 粒子/碎片不规则化 + 渲染细节 | 不再全是球/方块 |
-| M5 | 存档/网络/服务端权威接入 | delta 可存可载，客户端只表现 |
+| M1 | ✅ | DEM 粒子局部地面平面；静止粒子合并回 `MatterDelta`；重建附近格块 |
+| M2 | ✅ | 左键主要动作，力量 = `PlayerBody.get_max_force() × 2`，工具 `bone` |
+| M2b | ✅ 待窗口实测 | 手掌 `ContactForceProbe` 接触地面 >50 N 自动对接触点施力 |
+| M3 | ◐ | LOD patch + 静态碰撞开洞 + 格子部分移除；性能/精度待优化 |
+| M4 | ✅ | 粒子视觉用凸碎片模板 + 随机旋转；物理碰撞仍是球 |
+| M5 | ◐ | `MatterDelta` JSON 存/读完成；网络/服务端权威按 Phase 1 策略延后 |
 
-> M3 暂缓：静态碰撞开洞需要把 50 m 全局网格换成 LOD 地形块，
-> 否则洞口只有 50 m 三角面、会和 24 m 近场格块之间留缝。Phase 1 先接受
-> per-body collision exception，并把它记为已知限制。
+## 当前实现（2026-11-17）
 
-## 工作规则
+### 世界 / 地质
 
-1. 每个任务先加/改测试，再实现；
-2. 测试必须 headless 可跑（GDExtension 任务先 `gdextension\build.bat`）；
-3. 每个任务单独提交，正文写动机 + 验证结果；
-4. 同步更新 [CHANGES.md](CHANGES.md)；
-5. 连续执行到 M5 完成或遇到需要用户决策的问题。
+- `MatterField`：位置 + 深度 → 组成 / 含水率 / 压实度 / 温度 / 压力 /
+  抗剪强度 / 休止角；
+- `PlanetInterior`：地壳 / 地幔 / 外核 / 内核，材料库 73 种；
+- `OreVein`：3D FBM 矿脉、深度带、寄主岩性；
+- `GroundChunk`：marching tetrahedra 连续等值面，支持自定义 cell/size、
+  部分格子移除、`rebuild()`；
+- `MatterDelta`：堆积/挖走的稀疏增量，JSON 存/读，跨块共享。
 
-## 当前状态
+### 客户端地面（M3）
 
-- **M1 完成（2026-11-17）**：DEM 粒子加了局部地面平面，
-  静止粒子每 2 s 合并回 `MatterDelta`，并重建附近格块。
-  `test_dem_cpp` 23/23、`test_client_strike` 6/6。
-- **M2 完成（2026-11-17）**：G 键移除，改为 `primary_action`（左键）；
-  力量 = `PlayerBody.get_max_force() × 2`，工具材质用 `bone`（手骨）。
-- **M2b 已实现（2026-11-17，待窗口实测）**：手掌 `ContactForceProbe`
-  接触 `TerrainBody`/`GroundCollision` 且力 >50 N 时，每 300 ms 自动对
-  接触点施力；不需要按键。
-- **M3 部分完成（2026-11-17）**：静态碰撞按三角面中心开出 65 m 洞，
-  玩家周围生成 180 m / 4 m 格的单一 LOD patch；不再用 per-body exception。
-  格子支持**部分移除**（`remove_cell(volume_limit)`），一次敲击只带走
-  实际位移体积，不再整格消失。4 m 粗格对精细挖掘仍偏粗，后续可加更细
-  的交互 patch，但碰撞/地形 LOD 已成立。
-- **M4 完成（2026-11-17）**：DEM 粒子视觉用一次凸破裂的碎片当模板，
-  实例随机旋转；物理碰撞仍是球。
-- **M5 部分完成**：`MatterDelta` 已能 JSON 存/读、跨块共享；
-  网络/服务端权威按 CLAUDE.md 的 Phase 1 策略延后。
-- 已有：物质场、行星内部、3D 矿脉、凸碎片、DEM 内核（C++/多线程）、
-  近场格块流式、G 键施力、土→粒子、岩石→碎片、粒子合并。
-- 缺口：手部未触发；碰撞未真正开洞；粒子仍是球；无存档/网络。
+- 玩家周围 **180 m / 4 m 格** 的单块物质 patch；
+- 静态地形碰撞按三角面中心移除 **65 m 洞口**，视觉 shader 同步 discard；
+- patch 半宽 90 m 覆盖洞口；**不再使用 per-body collision exception**；
+- 玩家移动 45 m 触发 patch + 碰撞洞重建（约 2.8 s 卡顿）。
+
+### 交互 / 粒子
+
+- `primary_action`（左键）用玩家身体力量对前方地面施力；
+- 手掌接触 `TerrainBody`/`GroundCollision` >50 N 时自动对真实接触点施力；
+- 土 → C++ DEM 粒子（最多 1200 个，MultiMesh 凸碎片模板）；
+- 岩石 → `FractureGenerator` 破裂成独立 `ItemEntity`；
+- DEM 粒子有局部地面平面；静止粒子每 2 s 合并回 `MatterDelta`；
+- 粒子物理是球，视觉是不规则碎片。
+
+## 测试命令
+
+```powershell
+$GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
+& $GODOT --headless --path . scenes/test_dem_cpp.tscn        # 23/23
+& $GODOT --headless --path . scenes/test_client_strike.tscn  # 6/6
+& $GODOT --headless --path . scenes/test_ground_chunk.tscn   # 24/24
+& $GODOT --headless --path . scenes/test_soil_contact.tscn   # 19/19
+& $GODOT --headless --path . scenes/test_fracture.tscn       # 14/14
+& $GODOT --headless --path . scenes/test_delta_terrain.tscn  # 12/12
+& $GODOT --headless --path . scenes/test_delta_persistence.tscn # 14/14
+& $GODOT --headless --path . scenes/test_soil_particles.tscn # 10/10
+& $GODOT --headless --path . scenes/test_particle_budget.tscn # 16/16
+& $GODOT --headless --path . scenes/test_geology.tscn        # 27/27
+```
+
+GDExtension 任务先运行 `gdextension\build.bat`。
+
+## 当前已知问题
+
+- LOD patch 重建约 2.8 s，移动 45 m 触发一次，有明显卡顿；
+- 4 m 粗格对精细挖掘仍偏粗；一次敲击只带走很小体积；
+- 静态 50 m 网格的洞口边缘仍有少量三角面重叠 patch；
+- 粒子物理仍是球，不是真实不规则颗粒；
+- MPM/SPH、Linux/导出构建、服务端权威/网络同步未做。
+
+## 下一步（需要决策）
+
+1. **优化 M3**：patch 增量/缓存、更细交互 patch、消除重建卡顿；
+2. **进入 M5**：服务端权威、网络同步、正式存档。

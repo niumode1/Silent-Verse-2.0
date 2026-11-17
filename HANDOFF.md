@@ -277,10 +277,18 @@ a73d638 玩法系统：世界生成 + 冶炼 + 锻造 + 自由建造
 - **世界地质**：`MatterField`（组成+状态）、`PlanetInterior`（地壳/地幔/
   外核/内核，materials.json 共 73 种）、`OreVein`（3D FBM 矿脉+深度带）、
   `GroundChunk`（marching tetrahedra 等值面，过渡原型）。
-- **粒子法**：`SoilDEM` GDScript 小样（1000 粒子，约 1.9 万更新/秒）；
-  C++ GDExtension `SoilDEMKernel`（1000 粒子 1.67M 更新/秒，5000 粒子
-  407K 更新/秒）。
-- 新增测试：`test_geology` 27/27、`test_ground_chunk` 19/19、
-  `test_dem` 11/11、`test_dem_cpp` 10/10。
-- **还没做**：物质场 → 接触力 → 颗粒生成的链路；不规则颗粒/破裂面；
-  MPM/SPH；地面渲染替换；服务端权威粒子同步。
+- **粒子法**：`SoilDEM` GDScript 小样；C++ GDExtension `SoilDEMKernel`
+  （1000 粒子约 1.67M 更新/秒，5000 粒子约 407K，4 线程 248 步/秒）。
+- **物质地面闭环（M1–M4）**：LOD patch（180 m / 4 m 格）+ 静态碰撞
+  65 m 洞口；左键按身体力量施力；手掌接触 >50 N 自动施力；土→DEM 粒子
+  （MultiMesh 凸碎片视觉），岩石→ItemEntity 破裂碎片；粒子有局部地面
+  平面，静止后合并回 `MatterDelta`；delta 可 JSON 存/读。
+- 新增测试：`test_ground_chunk` 24/24、`test_soil_contact` 19/19、
+  `test_dem_cpp` 23/23、`test_client_strike` 6/6、`test_fracture` 14/14、
+  `test_delta_terrain` 12/12、`test_delta_persistence` 14/14、
+  `test_soil_particles` 10/10、`test_particle_budget` 16/16、
+  `test_geology` 27/27。
+- **还没做 / 已知问题**：LOD patch 重建约 2.8 s（移动 45 m 一次）；
+  4 m 粗格精细挖掘手感待优化；粒子物理仍是球；MPM/SPH、Linux/导出、
+  服务端权威/网络同步未做。详见 [WORKFLOW.md](WORKFLOW.md) 与
+  [CHANGES.md](CHANGES.md)。

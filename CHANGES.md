@@ -266,49 +266,45 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
   服务端编排/网络。
 - **不要全星球粒子**：4 km 星球全球 cm 级粒子不可能；活跃集 + LOD。
 
-## 8. 还没做 / 坑
+## 8. 当前已知问题（2026-11-17）
 
-- `GroundChunk` 尚未接进渲染/碰撞；客户端地面仍是静态三角网 + 试验场。
-- 接触力 → 移除物质 → DEM 粒子已通：`GroundChunk.apply_contact` 返回载荷，
-  `SoilDEMKernel.spawn_from_mass` 按质量生成粒子（test_soil_particles
-  7/7）。但还没有把它接进实际游戏循环/渲染。
-- C++ 内核仍是球形粒子；岩石破坏已经用 `FractureGenerator` 产出
-  独立 ItemEntity。切面方向已从纯随机改成「接触法线 + 各向异性 spread」，
-  但还不是完整应力张量/层理几何。MPM/SPH 都没做。
-- C++ 接触计算已支持多线程，并已换成**持久线程池**（5000 粒子 4 线程
-  约 2.7 倍，248 步/秒）。
-- 球心重力已接进 C++ 内核（`set_spherical_gravity`），但坐标是球心原点；
-  实际游戏里需要和客户端/服务端的世界坐标一致。
-- 活跃粒子预算已有工具（`radius_for_budget`），静止粒子能从内核移除
-  并写入 [MatterDelta](scripts/shared/world/matter_delta.gd) 稀疏增量
-  （`consolidate_slow` + `deposit`）；`MatterField` 会读取堆积组成和
-  高度，`GroundChunk.rebuild()` 能长出新格子和碰撞。
-- 「挖走」已经写进 `MatterDelta`（`remove_volume`），`GroundChunk.rebuild`
-  后坑还在；换块/重载的读路径还需要把同一个 delta 传给新块。
-- `GroundChunk` 仍是单块原型，没有流式加载；`MatterDelta` 已能 JSON
-  持久化并被多个块共享，但还没有接入正式存档/网络。
-- 正式客户端已有跟随玩家的 LOD patch（180 m / 4 m 格）和静态碰撞/视觉
-  洞口。patch 重建约 2.8 s，移动 45 m 触发一次，会有卡顿。
-- **静态碰撞体仍未开洞**：现在靠近场内玩家/物品的 collision exception
-  忽略静态地形，属于"按物体统一"而不是"按地形开洞"。远场和其他
-  物体仍用静态碰撞；异常每 300 ms 才更新一次。
-- 格块跨格线时只生成新增块，但每块本身仍是全量生成；远场仍是现有
-  50 m 静态网格。
-- DEM 粒子现在和局部地面平面碰撞，静止粒子会合并回 `MatterDelta`；
-  但地面是平面近似，不是真实格块高度场。粒子仍是球体，不是不规则颗粒。
-- 合并后的堆积会抬高地形并重建格块，但堆积的组成/状态只来自一次
-  施力的载荷。
-- G 键是调试入口，不是正式的手/工具动作；还没有根据手部接触力自动触发。
-- 一次移除 0.125 m³ 表土：2 cm 颗粒约 2.7 万；预算 5000 时粒径约 3.6 cm。
-- C++ 只构建了 Windows editor 目标；Linux/导出模板/多线程/GPU 未做。
-- 试验场石台是开发用人工构造；发布前关 `test_yard_enabled`。
-- `PlanetInterior` 的地壳厚度是为可玩性放大的，不是地球比例。
-- 服务端权威粒子同步、活跃区管理、持久化都还没开始。
+- 近场是玩家周围 180 m / 4 m 格的单一 LOD patch；静态碰撞按三角面中心
+  开 65 m 洞，patch 半宽 90 m 覆盖。玩家移动 45 m 重建一次，约 **2.8 s
+  卡顿**。
+- 4 m 粗格对精细挖掘仍偏粗；`remove_cell(volume_limit)` 支持部分移除，
+  一次敲击只带走实际位移体积，但手感偏慢。
+- 静态 50 m 网格的洞边缘仍有少量三角面与 patch 重叠。
+- DEM 粒子物理仍是球；视觉用凸碎片模板，但碰撞不是不规则形状。
+- DEM 地面是局部平面近似，不是真实格块高度场。
+- MPM/SPH 未做；C++ 只构建 Windows editor 目标；Linux/导出/GPU 未做。
+- 服务端权威粒子同步、网络、正式存档未接（按 Phase 1 策略延后）。
 
 ## 9. 下一步顺序
 
-1. 切面方向接完整应力张量/层理几何；
-2. 真正的碰撞开洞/分层禁用，替代现在的 per-body exception；
-4. 多线程空间分区，扩大活跃区；
-5. 湿泥/水 MPM/SPH；
-6. 接入渲染/网络；服务端权威。
+1. 优化 M3：patch 增量/缓存、更细交互 patch、消除 2.8 s 重建卡顿；
+2. 进入 M5：服务端权威、网络同步、正式存档；
+3. 粒子物理不规则化（DEM 多球/凸体）；
+4. MPM/SPH（湿泥/水）；
+5. Linux/导出构建与 GPU 评估。
+
+## 10. 当前进度快照（2026-11-17）
+
+| 任务 | 状态 |
+|---|---|
+| M1 粒子地面/合并 | ✅ |
+| M2 左键身体力量 | ✅ |
+| M2b 手掌接触自动施力 | ✅（待窗口实测） |
+| M3 LOD patch + 碰撞开洞 + 部分移除 | ◐（卡顿/精度待优化） |
+| M4 粒子不规则视觉 | ✅ |
+| M5 delta 存/读 | ✅ |
+| M5 网络/服务端权威 | 延后 |
+
+测试：`test_dem_cpp` 23/23、`test_client_strike` 6/6、
+`test_ground_chunk` 24/24、`test_soil_contact` 19/19、
+`test_fracture` 14/14、`test_delta_terrain` 12/12、
+`test_delta_persistence` 14/14、`test_soil_particles` 10/10、
+`test_particle_budget` 16/16、`test_geology` 27/27。
+
+最近提交：`3f731d3` 客户端施力；`a51568d` M1；`c14f6e2` M2；
+`affe47b` M2b；`3815ad4` M4；`3ae3670` M3 LOD patch；
+`e790600` M3 部分移除；当前文档提交见 `git log`。
