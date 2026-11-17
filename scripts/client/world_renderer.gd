@@ -11,6 +11,8 @@ extends Node3D
 @export var surface_spacing: float = 50.0  # 地表网格边长 m
 @export var water_offset: float = 0.15      # 水面略高于海平面
 @export var tree_scale: float = 1.0
+## 内容开发期：在出生点前方生成材料试验场。正式发布前应关掉。
+@export var test_yard_enabled: bool = true
 
 var world_generator: WorldGenerator = null
 var spawn_point: Vector3 = Vector3.ZERO
@@ -62,6 +64,13 @@ func _ready() -> void:
 	_setup_environment()
 	_generate_surface_mesh()
 	_find_spawn_point(world_items)
+	if test_yard_enabled:
+		add_child(MaterialTestYard.build_platform(world_generator, spawn_point,
+			spawn_look_target))
+		var yard := MaterialTestYard.generate(world_generator, spawn_point,
+			spawn_look_target)
+		world_items.append_array(yard)
+		print("Material test yard: ", yard.size(), " samples")
 	_report_spawn_surroundings(world_items)
 	_aim_sun_at_spawn()
 	_generate_water_mesh()
@@ -647,6 +656,19 @@ func _build_item_body(item: ItemEntity) -> ItemPhysicsBody:
 		col.shape = collision_shape as Shape3D
 		body.add_child(col)
 
+	# 试验场样品在头顶挂一个调试标签（材料 / 硬度 / 密度 / 相态）
+	if item.has_meta("test_label"):
+		var label := Label3D.new()
+		label.text = String(item.get_meta("test_label"))
+		label.font_size = 32
+		label.pixel_size = 0.0012
+		label.outline_size = 8
+		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		label.no_depth_test = true
+		label.visibility_range_end = 35.0
+		label.position = Vector3(0.0, _label_height(item), 0.0)
+		body.add_child(label)
+
 	# 初始位置对齐到可见/碰撞网格，再抬高 0.5m 落下；
 	# 精确噪声高度和 50m 网格可能差很多，直接放在噪声高度会嵌进地形。
 	var dir := item.transform.origin.normalized()
@@ -681,12 +703,35 @@ func _build_item_body(item: ItemEntity) -> ItemPhysicsBody:
 	else:
 		lift += float(dims.get("height", 0.2)) * 0.5
 
+	# 试验场样品按真实半径贴地摆放并直接进入睡眠：样品场是给人看和拿的，
+	# 不该在加载时自己顺着坡滚走；被玩家碰到时物理会自动唤醒。
+	if item.has_meta("test_yard"):
+		lift = _resting_height(item) + 0.02
+
 	body.transform = Transform3D(item.transform.basis, dir * (visible_ground + lift))
 	body.fallback_position = dir * (visible_ground + lift)
 	body.ground_radius_sampler = Callable(self, "_sample_mesh_radius")
 	body.set_meta("spawn_pos", body.transform.origin)
 	body.set_meta("spawn_dir", dir)
 	return body
+
+
+func _resting_height(item: ItemEntity) -> float:
+	var dims: Dictionary = item.dimensions
+	if item.shape == "fiber":
+		return float(dims.get("diameter", 0.05)) * 0.5
+	if item.shape == "sphere":
+		return float(dims.get("radius", 0.2))
+	return float(dims.get("height", 0.2)) * 0.5
+
+
+func _label_height(item: ItemEntity) -> float:
+	var dims: Dictionary = item.dimensions
+	if item.shape == "fiber":
+		return float(dims.get("diameter", 0.05)) * 0.5 + 0.25
+	if item.shape == "sphere":
+		return float(dims.get("radius", 0.2)) + 0.25
+	return float(dims.get("height", 0.2)) * 0.5 + 0.25
 
 
 func _build_item_visual(item: ItemEntity) -> MeshInstance3D:
