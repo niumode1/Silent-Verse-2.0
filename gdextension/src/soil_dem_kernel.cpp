@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <random>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -167,28 +168,20 @@ void SoilDEMKernel::set_planar_gravity(double gravity) {
 	surface_gravity_ = static_cast<float>(gravity);
 }
 
+void SoilDEMKernel::set_threads(int count) {
+	thread_count_ = std::max(1, std::min(count, 16));
+}
+
+int SoilDEMKernel::get_thread_count() const {
+	return thread_count_;
+}
+
 void SoilDEMKernel::step(double dt_in) {
 	if (positions_.empty()) {
 		return;
 	}
 	const float dt = static_cast<float>(dt_in);
 	const int n = static_cast<int>(positions_.size());
-	std::vector<Vector3> forces(n);
-	for (int i = 0; i < n; ++i) {
-		Vector3 gravity(0.0f, -surface_gravity_, 0.0f);
-		if (spherical_gravity_) {
-			const Vector3 &p = positions_[i];
-			const float r = p.length();
-			if (r > 1.0f) {
-				const float altitude = std::max(r - planet_radius_, 0.0f);
-				const float ratio = planet_radius_
-						/ (planet_radius_ + altitude);
-				const float magnitude = surface_gravity_ * ratio * ratio;
-				gravity = -p / r * magnitude;
-			}
-		}
-		forces[i] = gravity * mass_;
-	}
 
 	const float cell = radius_ * 2.0f + 0.002f;
 	std::unordered_map<CellKey, std::vector<int>, CellHash> buckets;
@@ -204,30 +197,76 @@ void SoilDEMKernel::step(double dt_in) {
 		buckets[key].push_back(i);
 	}
 
-	for (int i = 0; i < n; ++i) {
-		const Vector3 &p = positions_[i];
-		const CellKey key{
-			static_cast<int>(std::floor(p.x / cell)),
-			static_cast<int>(std::floor(p.y / cell)),
-			static_cast<int>(std::floor(p.z / cell)),
-		};
-		for (int dx = -1; dx <= 1; ++dx) {
-			for (int dy = -1; dy <= 1; ++dy) {
-				for (int dz = -1; dz <= 1; ++dz) {
-					const CellKey neighbor{key.x + dx, key.y + dy, key.z + dz};
-					auto it = buckets.find(neighbor);
-					if (it == buckets.end()) {
-						continue;
-					}
-					for (int j : it->second) {
-						if (j <= i) {
+	auto contact_range = [&](int begin, int end, std::vector<Vector3> &out) {
+		for (int i = begin; i < end; ++i) {
+			const Vector3 &p = positions_[i];
+			const CellKey key{
+				static_cast<int>(std::floor(p.x / cell)),
+				static_cast<int>(std::floor(p.y / cell)),
+				static_cast<int>(std::floor(p.z / cell)),
+			};
+			for (int dx = -1; dx <= 1; ++dx) {
+				for (int dy = -1; dy <= 1; ++dy) {
+					for (int dz = -1; dz <= 1; ++dz) {
+						const CellKey neighbor{key.x + dx, key.y + dy,
+							key.z + dz};
+						auto it = buckets.find(neighbor);
+						if (it == buckets.end()) {
 							continue;
 						}
-						_contact(i, j, forces, dt);
+						for (int j : it->second) {
+							if (j <= i) {
+								continue;
+							}
+							_contact(i, j, out, dt);
+						}
 					}
 				}
 			}
 		}
+	};
+
+	std::vector<Vector3> forces(n);
+	const int threads = std::max(1, std::min(thread_count_, 16));
+	if (threads <= 1) {
+		contact_range(0, n, forces);
+	} else {
+		std::vector<std::vector<Vector3>> local_forces(
+				threads, std::vector<Vector3>(n));
+		std::vector<std::thread> workers;
+		workers.reserve(threads);
+		for (int t = 0; t < threads; ++t) {
+			const int begin = n * t / threads;
+			const int end = n * (t + 1) / threads;
+			workers.emplace_back([&, t, begin, end]() {
+				contact_range(begin, end, local_forces[t]);
+			});
+		}
+		for (auto &worker : workers) {
+			worker.join();
+		}
+		for (int t = 0; t < threads; ++t) {
+			for (int i = 0; i < n; ++i) {
+				forces[i] += local_forces[t][i];
+			}
+		}
+	}
+
+	// 球心/平面重力
+	for (int i = 0; i < n; ++i) {
+		Vector3 gravity(0.0f, -surface_gravity_, 0.0f);
+		if (spherical_gravity_) {
+			const Vector3 &p = positions_[i];
+			const float r = p.length();
+			if (r > 1.0f) {
+				const float altitude = std::max(r - planet_radius_, 0.0f);
+				const float ratio = planet_radius_
+						/ (planet_radius_ + altitude);
+				const float magnitude = surface_gravity_ * ratio * ratio;
+				gravity = -p / r * magnitude;
+			}
+		}
+		forces[i] += gravity * mass_;
 	}
 
 	// 推板（沿 -X 方向推进）
@@ -410,6 +449,10 @@ void SoilDEMKernel::_bind_methods() {
 			&SoilDEMKernel::set_spherical_gravity);
 	ClassDB::bind_method(D_METHOD("set_planar_gravity", "gravity"),
 			&SoilDEMKernel::set_planar_gravity);
+	ClassDB::bind_method(D_METHOD("set_threads", "count"),
+			&SoilDEMKernel::set_threads);
+	ClassDB::bind_method(D_METHOD("get_thread_count"),
+			&SoilDEMKernel::get_thread_count);
 	ClassDB::bind_method(D_METHOD("step", "dt"), &SoilDEMKernel::step);
 	ClassDB::bind_method(D_METHOD("get_positions"),
 			&SoilDEMKernel::get_positions);

@@ -32,6 +32,9 @@ public:
 	/// 球心重力：g(r)=g0·(R/(R+alt))²，方向指向球心。默认关闭（平面 -Y）。
 	void set_spherical_gravity(double planet_radius, double surface_gravity);
 	void set_planar_gravity(double gravity);
+	/// 接触计算的线程数；1 = 单线程，>1 时按粒子下标分段并行。
+	void set_threads(int count);
+	int get_thread_count() const;
 	void step(double dt);
 
 	PackedVector3Array get_positions() const;
@@ -76,6 +79,7 @@ private:
 	float tool_speed_ = 0.05f;
 	float tool_force_ = 0.0f;
 	int steps_ = 0;
+	int thread_count_ = 1;
 };
 
 } // namespace godot

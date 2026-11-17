@@ -57,6 +57,7 @@ k.set_bounds(min, max)
 k.set_tool(x, speed)
 k.set_spherical_gravity(R, g0)                  # 球心重力
 k.set_planar_gravity(g)
+k.set_threads(n)                                # 接触计算并行线程数
 k.step(dt)
 k.get_positions()
 k.get_velocities()
@@ -81,6 +82,7 @@ k.get_step_count()
 |---|---|---|
 | 1000 | 1,669,867 | 1670 |
 | 5000 | 406,745 | 81 |
+| 5000（4 线程） | ~1,170,000 | 233 |
 
 对比 GDScript 原型（1000 粒子）：约 1.9 万粒子更新/秒。C++ 约 88 倍。
 5000 粒子在 60 Hz 下需要 30 万更新/秒，当前单线程已能覆盖；更大的
@@ -89,6 +91,6 @@ k.get_step_count()
 ## 下一步
 
 - 把 `MatterField` 的组成/状态通过参数传进内核（目前先验参数）；
-- 用空间分区/多线程扩展活跃区；
+- 线程池化（现在每步创建线程），扩展活跃区；
 - 湿泥/水用 MPM/SPH 内核，与 DEM 颗粒耦合；
 - 不规则颗粒/碎块：从破裂面生成凸体，不再用球。

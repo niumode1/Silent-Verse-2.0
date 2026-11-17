@@ -27,6 +27,7 @@ func _ready() -> void:
 	_test_determinism()
 	_test_states()
 	_test_spherical_gravity()
+	_test_threads()
 	_benchmark(1000)
 	_benchmark(5000)
 
@@ -125,6 +126,31 @@ func _mean_radius(k) -> float:
 	for p in positions:
 		total += p.length()
 	return total / float(positions.size())
+
+
+func _test_threads() -> void:
+	print("[Threads]")
+	for threads in [1, 4]:
+		var k = _new_kernel(5000, 1600.0, 0.0, 0.5, 2500.0, 0.2, 42)
+		k.set_threads(threads)
+		var mass_before := float(k.get_total_mass())
+		var start := Time.get_ticks_usec()
+		for i in range(40):
+			k.step(DT)
+		var elapsed: float = float(Time.get_ticks_usec() - start) / 1.0e6
+		var steps_per_s: float = 40.0 / maxf(elapsed, 1e-6)
+		print("  threads=%d: 40 steps in %.3f s → %.0f steps/s"
+			% [threads, elapsed, steps_per_s])
+		_check(int(k.get_thread_count()) == threads,
+			"thread count set to %d" % threads)
+		_check(absf(float(k.get_total_mass()) - mass_before) < 1e-6,
+			"mass conserved with %d threads" % threads)
+		var finite := true
+		for p in k.get_positions():
+			if not p.is_finite():
+				finite = false
+				break
+		_check(finite, "positions finite with %d threads" % threads)
 
 
 func _make_state(kind: String):

@@ -140,6 +140,7 @@
 - `get_particle_mass`：单个粒子质量，用于核对质量守恒；
 - `set_spherical_gravity(R, g0)`：球心重力 `g(r)=g0·(R/(R+alt))²`，
   方向指向球心；`set_planar_gravity(g)` 回到固定 -Y；
+- `set_threads(n)`：接触计算按粒子下标分 n 段并行，默认 1；
 - `get_velocities` / `remove_particles`：供静止粒子合并使用。
 
 ### 5.1 活跃粒子预算
@@ -161,6 +162,7 @@
 |---|---|---|
 | 1000 | 1,669,867 | 1670 |
 | 5000 | 406,745 | 81 |
+| 5000（4 线程） | ~1.17M | 233 |
 | GDScript 1000 | ~18,900 | 19 |
 
 - C++ 约 **88 倍**于 GDScript；
@@ -179,7 +181,7 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 & $GODOT --headless --path . scenes/test_particle_budget.tscn # 16/16（需先构建）
 & $GODOT --headless --path . scenes/test_delta_terrain.tscn  # 12/12
 & $GODOT --headless --path . scenes/test_delta_persistence.tscn # 14/14
-& $GODOT --headless --path . scenes/test_dem_cpp.tscn       # 14/14（需先构建）
+& $GODOT --headless --path . scenes/test_dem_cpp.tscn       # 20/20（需先构建）
 ```
 
 旧测试仍可跑：`test_items` 39/39，其余见 HANDOFF §2。
@@ -206,6 +208,8 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
   `SoilDEMKernel.spawn_from_mass` 按质量生成粒子（test_soil_particles
   7/7）。但还没有把它接进实际游戏循环/渲染。
 - C++ 内核仍是球形粒子；不规则颗粒/破裂面、MPM/SPH 都没做。
+- C++ 接触计算已支持多线程（5000 粒子 4 线程约 2.6 倍），但每步都
+  创建线程，正式版应换成线程池。
 - 球心重力已接进 C++ 内核（`set_spherical_gravity`），但坐标是球心原点；
   实际游戏里需要和客户端/服务端的世界坐标一致。
 - 活跃粒子预算已有工具（`radius_for_budget`），静止粒子能从内核移除
@@ -225,7 +229,7 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 ## 9. 下一步顺序
 
 1. 不规则颗粒/碎块（破裂面）；
-2. C++ 内核多线程/更大活跃区；
+2. 线程池 + 更大活跃区；
 4. 多线程空间分区，扩大活跃区；
 5. 湿泥/水 MPM/SPH；
 6. 接入渲染/网络；服务端权威。
