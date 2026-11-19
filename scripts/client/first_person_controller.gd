@@ -41,6 +41,8 @@ var _body_root: Node3D = null
 var _neck_pivot: Node3D = null
 var _body_materials: Dictionary = {}
 var _stuck_time: float = 0.0
+## 上一次自动跨过低矮物品的时间（ms），防止每帧重复抬升。
+var _last_step_over_ms: int = 0
 
 # 手指/关节控制
 var _hand_roots: Array = []
@@ -325,12 +327,17 @@ func _physics_process(delta: float) -> void:
 		if inward < 0.0:
 			velocity -= sky * inward
 
-	# 最后的兜底：完全没有滑动碰撞但仍然被卡住时，轻微抬升
+	# 最后的兜底：只有真的埋进地形才抬出来。站在木棍/石头上走不动
+	# 不是「卡进地形」；旧逻辑每 0.8 s 无条件抬 12 cm，会被木棍
+	# 连续触发，把玩家一路送上天。
 	var horizontal_speed := (velocity - sky * velocity.dot(sky)).length()
-	if input.length() > 0.01 and is_on_floor() and horizontal_speed < 0.25:
+	var surface_r: float = _ground_radius(global_position)
+	var embedded: bool = global_position.length() < surface_r - 0.03
+	if embedded and input.length() > 0.01 and horizontal_speed < 0.25:
 		_stuck_time += delta
 		if _stuck_time > 0.8:
-			global_position += sky * 0.12
+			global_position = sky * (surface_r + 0.03)
+			velocity = Vector3.ZERO
 			_stuck_time = 0.0
 	else:
 		_stuck_time = 0.0
@@ -351,13 +358,21 @@ func _finger_closed_count(hand: int) -> int:
 	return count
 
 
-func _item_step_height(item: ItemEntity) -> float:
+func _item_step_height(item: ItemEntity, sky: Vector3) -> float:
 	if item == null:
 		return 0.0
 	var dims := item.dimensions
 	match item.shape:
 		"fiber":
-			return float(dims.get("diameter", dims.get("width", 0.2)))
+			# 木棍可能是横躺的，也可能是竖的。水平宽度只有直径，
+			# 但竖起来时高度是整根长度——竖棍不能当台阶跨。
+			var length: float = float(dims.get("length", 1.0))
+			var diameter: float = float(dims.get("diameter",
+				dims.get("width", 0.2)))
+			var axis: Vector3 = item.transform.basis.y.normalized()
+			var along: float = absf(axis.dot(sky))
+			return length * along + diameter * sqrt(maxf(
+				1.0 - along * along, 0.0))
 		"sphere":
 			return float(dims.get("radius", 0.2)) * 2.0
 		_:
@@ -366,6 +381,10 @@ func _item_step_height(item: ItemEntity) -> float:
 
 func _try_step_over(move_dir: Vector3, position_before: Vector3, sky: Vector3) -> void:
 	if move_dir.length() < 0.01 or not is_on_floor():
+		return
+	# 一次跨步后至少等 0.25 s，否则连续阻挡会每帧抬 10+ cm。
+	var now: int = Time.get_ticks_msec()
+	if now < _last_step_over_ms + 250:
 		return
 
 	var moved := global_position - position_before
@@ -378,11 +397,15 @@ func _try_step_over(move_dir: Vector3, position_before: Vector3, sky: Vector3) -
 	for i in range(get_slide_collision_count()):
 		var collision := get_slide_collision(i)
 		var collider = collision.get_collider()
+		# 只有「侧面挡住」才跨；站在木棍/石头上时法线朝上，
+		# 那是地板接触，再抬就会把人往天上送。
+		if collision.get_normal().dot(sky) > 0.35:
+			continue
 		if collider is ItemPhysicsBody:
 			var item: ItemEntity = collider.item
-			var h := _item_step_height(item)
-			if h <= 0.0 or h > 0.60:
-				return  # 太高/未知物体，不跨
+			var h := _item_step_height(item, sky)
+			if h <= 0.0 or h > 0.45:
+				return  # 太高/竖立/未知物体，不跨
 			step_height = maxf(step_height, h + 0.10)
 			blocked = true
 		elif collider is StaticBody3D:
@@ -394,6 +417,7 @@ func _try_step_over(move_dir: Vector3, position_before: Vector3, sky: Vector3) -
 	if blocked and step_height > 0.0:
 		global_position += sky * step_height
 		_stuck_time = 0.0
+		_last_step_over_ms = now
 
 
 func _push_contacted_items(delta: float, push_dir: Vector3) -> void:
