@@ -628,3 +628,25 @@ PD 参数能凑出来的。下一步应单独做控制器，不要继续在手�
 
 下一步应做真正的 whole-body 控制器（状态空间/LQR 或
 centroidal momentum control），而不是继续单关节试符号。
+
+## 26. 稳定版本标记（2026-11-20）
+
+本次把当前可运行的主线标记为稳定版本。包含：
+
+- 球形世界、地表 LOD、物质场、DEM 粒子、破裂、`MatterDelta` 存/读；
+- 物理手：每节指骨 5 mm 骨芯 + 9 mm 连续软皮壳（layer 16，
+  Generic6DOF 软挂），指腹 30 点采样；抓取只靠接触/摩擦，
+  没有 PinJoint/抓取标记；
+- E 握持辅助（只改肌肉目标角）、Space 跳跃、TEST STICK 试抓木棍；
+- 下肢肌力按解剖量级单独建模（髋 180 / 膝 140 / 踝 100 N·m，
+  按先天力量/体格缩放）。
+
+已知未完成/不计入稳定判据：
+
+- M8 全物理主动布娃娃：`physical_biped_stand` 仍 FAIL（COM/CoP
+  控制器未收敛），未接入主控制器；
+- 近场挖地碰撞/`test_client_strike` 仍是 2/3；
+- 服务端权威、网络同步、正式存档仍按 Phase 1 策略延后。
+
+已通过的核心回归：`test_finger_grip`、`test_thumb_range`、
+`test_grip_assist`、`test_arm_walk`、`test_arm_load`。
