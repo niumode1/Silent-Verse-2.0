@@ -2141,6 +2141,9 @@ func _build_fingers_on_hand(hand_root: Node3D, h: int, skin) -> void:
 			# 这样 [_apply_finger_pose] 的 rotation.x 和铰链的
 			# 局部 x 轴都直接对上，不用给拇指开特例。
 			var palm_frame: Basis = hand_root.global_transform.basis.orthonormalized()
+			# 四指沿 -z 生长；拇指沿 ±x（垂直于四指）从桡侧长出，
+			# 再靠 CMC 内收 +70° 横跨到掌前。两者生长方向垂直，
+			# 不是同一个方向。
 			var grow: Vector3 = palm_frame * Vector3(inner, 0.0, 0.0)
 			var bend_axis: Vector3 = palm_frame * Vector3(0.0, 0.0, inner)
 			var thumb_basis := Basis(bend_axis,
