@@ -20,25 +20,6 @@ const ContactForceProbeScript = preload("res://scripts/client/contact_force_prob
 @export var crouch_height: float = 0.9
 @export var planet_radius: float = 3978.87
 
-@export_group("Hand Shape")
-## 拇指根在手掌局部系的位置（x 会乘左右手符号）
-@export var thumb_base_local: Vector3 = Vector3(0.054, -0.013, 0.008)
-## 拇指掌骨 / 近节 / 末节长度（m）
-@export var thumb_seg_lengths: Array[float] = [0.030, 0.022, 0.016]
-## 四指近节 / 中节 / 末节长度（m）
-@export var finger_seg_lengths: Array[float] = [0.046, 0.026, 0.020]
-## 拇指 CMC 内收最大角度（对掌）
-@export_range(0.0, 120.0) var thumb_adduct_max_deg: float = 0.0
-## 掌盒厚度（m）
-@export_range(0.008, 0.05) var palm_thickness: float = 0.016
-
-@export var thumb_grip_assist_enabled: bool = false
-
-@export_group("Body Shape")
-@export var torso_hip_radius: float = 0.145
-@export var torso_waist_radius: float = 0.130
-@export var torso_chest_radius: float = 0.155
-
 ## 地形引用；有它时按真实地表高度行走，否则退回平均球面
 var terrain: Terrain = null
 
@@ -77,9 +58,6 @@ var _selected_arm_joint: int = 0
 var _finger_seg_lengths: Array = []   # [hand][finger] = [prox_len, mid_len, dist_len]
 var _palm_bodies: Array = []          # [hand] RigidBody3D 手掌（腕关节末端）
 var _last_hand_ground_strike_ms: int = 0
-## 抓握辅助：右键按住时按「对掌 → 屈曲 → MCP/IP」顺序驱动拇指
-var _thumb_assist_active: bool = false
-var _thumb_assist_start_ms: int = 0
 var _finger_segments: Array = []      # [hand][finger] = [RigidBody3D x3]
 ## [hand] 拇指 CMC 的过渡刚体：掌骨与手掌之间多串一个无碰撞刚体，
 ## 两个铰链（内收 + 屈曲）合起来才是两自由度 CMC。见 [_build_fingers_for_hand]。
@@ -248,11 +226,6 @@ func _input(event: InputEvent) -> void:
 			_is_sprinting = event.pressed
 		if event.pressed and event.keycode == KEY_C:
 			_is_crouching = not _is_crouching
-	if event is InputEventMouseButton \
-			and event.button_index == MOUSE_BUTTON_RIGHT:
-		_thumb_assist_active = event.pressed
-		if event.pressed:
-			_thumb_assist_start_ms = Time.get_ticks_msec()
 
 
 func _physics_process(delta: float) -> void:
@@ -573,13 +546,12 @@ func _rebuild_body_skin() -> void:
 	var boots_col := Color(0.12, 0.10, 0.08)
 
 	# 躯干：骨盆 → 腰 → 胸廓 → 颈根
-	# 肚子收薄，第一人称低头时能看到腿
 	_skin_chain([
-		[Vector3(0.0, 0.80, 0.02), torso_hip_radius, pants_col],
-		[Vector3(0.0, 0.90, 0.01), (torso_hip_radius + torso_waist_radius) * 0.5, pants_col],
-		[Vector3(0.0, 0.98, 0.0), torso_waist_radius, shirt_col],
-		[Vector3(0.0, 1.12, -0.02), torso_chest_radius, shirt_col],
-		[Vector3(0.0, 1.25, 0.01), (torso_chest_radius + 0.07) * 0.5, shirt_col],
+		[Vector3(0.0, 0.80, 0.02), 0.16, pants_col],
+		[Vector3(0.0, 0.90, 0.01), 0.15, pants_col],
+		[Vector3(0.0, 0.98, 0.0), 0.145, shirt_col],
+		[Vector3(0.0, 1.12, -0.02), 0.19, shirt_col],
+		[Vector3(0.0, 1.25, 0.01), 0.16, shirt_col],
 		[Vector3(0.0, 1.31, 0.05), 0.07, shirt_col],
 	])
 
@@ -635,10 +607,9 @@ func _rebuild_body_skin() -> void:
 				cur.append([_body_root.to_local(wrist_w), 0.034, skin_col])
 			if wrist_broken:
 				pieces.append(cur)
-				cur = [[_body_root.to_local(wrist_palm_w), 0.030, skin_col]]
-			# 手掌视觉厚度收薄，给手指留出合拢空间
-			cur.append([_body_root.to_local(palm_w), 0.032, skin_col])
-			cur.append([_body_root.to_local(knuckle_w), 0.028, skin_col])
+				cur = [[_body_root.to_local(wrist_palm_w), 0.04, skin_col]]
+			cur.append([_body_root.to_local(palm_w), 0.045, skin_col])
+			cur.append([_body_root.to_local(knuckle_w), 0.04, skin_col])
 			pieces.append(cur)
 			for piece in pieces:
 				_skin_chain(piece)
@@ -947,11 +918,12 @@ const FINGER_JOINT_LIMITS_DEG := [90.0, 100.0, 70.0]
 ## 口袋（离腕根 5.5-7.8 cm）。真人拇指从 CMC 到指尖约 10 cm，其中掌骨
 ## 占 4-5 cm。
 const THUMB_JOINT_LIMITS_DEG := [80.0, 90.0, 80.0]
-## 拇指 CMC 内收（对掌）的最大角度。内收轴是掌 y，正角把拇指从
-## 桡侧横跨到掌前，扫向四指围出的握持口袋（掌 -z 方向），指尖才能
-## 和食指/中指形成对掌。70° 时诊断里指尖 z≈-0.023，与四指尖 -0.026
-## 基本重合。
-const THUMB_ADDUCT_MAX_DEG := 70.0
+## 拇指 CMC 内收（对掌）的最大角度。内收轴是掌 y，只能把这根拇指
+## 在水平面里从 −x 摆到 ±z：45° 只到掌前，够不到对侧；要横跨到四指
+## 根部得转过 ~110°。但实测这两种幅度都会在合拢时贴着木棍高度横扫，
+## 把木棍推出掌心（0,2 段接触力 60-117N），所以暂时关掉内收（=0），
+## 只保留两自由度机构和几何，等握持控制改成「按物体半径收指」再启用。
+const THUMB_ADDUCT_MAX_DEG := 0.0
 ## 手指目标角速度（rad/s）。只在张开/自由屈曲时用于估算角速度。
 const FINGER_CLOSE_SPEED := 4.0
 ## 指屈肌最大收缩角速度（rad/s）。健康手指空载全屈约 0.3-0.4 s，
@@ -978,9 +950,7 @@ const FINGER_STOP_DAMPING := 0.1
 ## 指骨半径与皮肉半径。指骨是硬接触（刚体胶囊），外面的皮下脂肪 +
 ## 真皮是可压缩层：真人指腹 3-5 mm 厚，压陷 1 mm 约需 0.5-1 N，
 ## 压陷 3 mm 约 5-15 N——正好是一只手的握力量级。
-## 硬碰撞半径。原来 5 mm 只到骨面，外面 4 mm 指腹只靠弹簧力，
-## 木棍会陷进可见皮肉里；提高到 8 mm，让碰撞面接近皮肉外表面。
-const FINGER_BONE_RADIUS := 0.008
+const FINGER_BONE_RADIUS := 0.005
 const FINGER_FLESH_RADIUS := 0.009
 ## 指腹软组织的等效厚度与整节指骨的等效压缩刚度（N/m）。
 ## 刚度不是抓取力：它只描述「指腹被压进去多少、顶回来多少」，
@@ -1168,7 +1138,7 @@ func _build_arm_rig(h: int) -> RigidBody3D:
 	# 掌厚 1.6 cm（掌心面 y=-0.008）。真实掌骨部约 2.2 cm，但掌盒越厚，
 	# 合拢后的指骨到掌面就越挤；薄一档，四指和拇指才有空间把粗树枝
 	# 包进掌心，而不是被掌盒顶着只能夹在掌外。
-	palm_shape.size = Vector3(0.10, palm_thickness, 0.11)
+	palm_shape.size = Vector3(0.10, 0.016, 0.11)
 	palm_col.shape = palm_shape
 	palm.add_child(palm_col)
 	_hand_physics_root.add_child(palm)
@@ -1756,18 +1726,6 @@ func _carry_body(body: RigidBody3D, delta: Transform3D,
 
 
 ## 某个肌肉关节当前可用力矩：主动控制时满力，静止时只有静力支撑
-## 抓握辅助阶段：0 = 对掌(Y)，1 = 屈曲(Z)，2 = MCP/IP(X) 包裹。
-func _thumb_assist_phase() -> int:
-	if not _thumb_assist_active:
-		return 0
-	var elapsed: int = Time.get_ticks_msec() - _thumb_assist_start_ms
-	if elapsed < 300:
-		return 0
-	if elapsed < 600:
-		return 1
-	return 2
-
-
 func _joint_torque(muscle: String, active: bool) -> float:
 	if _player_body == null:
 		return 0.0
@@ -1795,13 +1753,9 @@ func _update_finger_muscles(h: int, palm: RigidBody3D, fore: RigidBody3D,
 				for j in range(angs.size()):
 					var lim: float = float(FINGER_JOINT_LIMITS_DEG[j])
 					grip = maxf(grip, clampf(float(angs[j]) / lim, 0.0, 1.0))
-			# 对掌轴 = 手掌 +Y：负责把指腹翻向掌心，是捏握主力。
-			# 抓握辅助阶段 0 优先把它拉满，再让屈曲轴做前后微调。
-			var target: float
-			if _thumb_assist_active:
-				target = deg_to_rad(thumb_adduct_max_deg)
-			else:
-				target = deg_to_rad(grip * thumb_adduct_max_deg)
+			# 内收轴是掌 +y，正向旋转把拇指从侧向甩向腕侧（掌 +z）；
+			# 对掌要往指尖侧（掌 -z）扫到四指根部的握持口袋，所以取负。
+			var target: float = -deg_to_rad(grip * THUMB_ADDUCT_MAX_DEG)
 			var torque: float = _joint_torque("thumb_cmc_adduct", true)
 			joint.set_param(HingeJoint3D.PARAM_MOTOR_MAX_IMPULSE, torque * dt)
 			joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY,
@@ -1820,17 +1774,6 @@ func _update_finger_muscles(h: int, palm: RigidBody3D, fore: RigidBody3D,
 				float(_finger_angles[h][f][j]), 0.0, limit_deg)
 			var joint: HingeJoint3D = _finger_joints[h][f][j]
 			var active: bool = int(_finger_active_until[h][f][j]) > now_ms
-			# 抓握辅助：拇指按「对掌(Y) → 屈曲(Z) → MCP/IP(X)」顺序收拢。
-			# 对掌轴负责翻面，屈曲轴负责伸出，二者不互换。
-			if _thumb_assist_active and f == 0:
-				var phase := _thumb_assist_phase()
-				active = phase > 0
-				if j == 0:
-					target_deg = 50.0 if phase >= 1 else 0.0  # CMC 屈曲
-				elif j == 1:
-					target_deg = 70.0 if phase >= 2 else 0.0  # MCP
-				else:
-					target_deg = 60.0 if phase >= 2 else 0.0  # IP
 			var muscle_key := "finger_mcp" if j == 0 else (
 				"finger_pip" if j == 1 else "finger_dip")
 			var torque: float = _joint_torque(muscle_key, active)
@@ -2184,8 +2127,7 @@ func _build_fingers_on_hand(hand_root: Node3D, h: int, skin) -> void:
 			# z=+0.008：CMC 退到掌的近端（腕侧），离四指指根（z=-0.055）
 			# 拉开 6 cm。握口因此变大——拇指和四指像两把钳口，能把正常
 			# 粗细（Ø3.5-5 cm）的树枝夹在中间，而不是被四指指根挤出去。
-			base.position = Vector3(thumb_base_local.x * inner,
-				thumb_base_local.y, thumb_base_local.z)
+			base.position = Vector3(0.054 * inner, -0.013, 0.008)
 			# 拇指**横着长**：基准生长方向垂直于四指（四指沿 -z 长，
 			# 拇指沿 ±x 长），再靠 CMC 内收扫向前方（见
 			# [_build_fingers_for_hand] 的 CMC 过渡体）。屈曲轴取掌 z，
@@ -2196,9 +2138,6 @@ func _build_fingers_on_hand(hand_root: Node3D, h: int, skin) -> void:
 			# 这样 [_apply_finger_pose] 的 rotation.x 和铰链的
 			# 局部 x 轴都直接对上，不用给拇指开特例。
 			var palm_frame: Basis = hand_root.global_transform.basis.orthonormalized()
-			# 四指沿 -z 生长；拇指沿 ±x（垂直于四指）从桡侧长出，
-			# 再靠 CMC 内收 +70° 横跨到掌前。两者生长方向垂直，
-			# 不是同一个方向。
 			var grow: Vector3 = palm_frame * Vector3(inner, 0.0, 0.0)
 			var bend_axis: Vector3 = palm_frame * Vector3(0.0, 0.0, inner)
 			var thumb_basis := Basis(bend_axis,
@@ -2214,10 +2153,7 @@ func _build_fingers_on_hand(hand_root: Node3D, h: int, skin) -> void:
 		# 从 CMC 到指尖约等于掌宽（10 cm）的 0.65-0.7；之前 9.9 cm 和
 		# 掌宽一样长，对掌时指尖会甩到掌外 9 cm 才折回，永远够不到
 		# 掌前的握持口袋。
-		# 拇指：掌骨 4.5 + 近节 3.2 + 末节 2.4 = 10.1 cm，接近真人 CMC→指尖。
-		# 原来 3.0/2.2/1.6 太短，指尖够不到四指围出的握持口袋。
-		var lengths: Array = finger_seg_lengths if f > 0 \
-			else [thumb_seg_lengths[0], thumb_seg_lengths[1], thumb_seg_lengths[2]]
+		var lengths: Array = [0.046, 0.026, 0.020] if f > 0 else [0.030, 0.022, 0.016]
 		var pivots: Array = []
 		var parent: Node3D = base
 		for j in range(lengths.size()):
