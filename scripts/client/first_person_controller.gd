@@ -1894,10 +1894,10 @@ func _update_finger_muscles(h: int, palm: RigidBody3D, fore: RigidBody3D,
 	_update_finger_pads(h)
 
 
-## 软皮采样点：沿指骨长度取 5 站、掌侧 ±57° 取 5 条，共 25 个点
-## （末节再加 5 个指尖点）。每个点是骨面外侧、即皮肉表面的位置和
-## 法线；运行时每个点各撑一根弹簧。采样越密，木棍压进来时受力越
-## 分散，接触面积越接近真实指腹，而不是 12 个离散点。
+## 软皮采样点：沿指骨长度取 6 站（含两端关节附近）、掌侧 ±57°
+## 取 5 条，共 30 个点（末节再加 5 个指尖点）。两端采样让手指弯起来
+## 后关节褶皱附近也有软皮接触点，而不是只有骨节中段。每个点是骨面
+## 外侧、即皮肉表面的位置和法线；运行时每个点各撑一根弹簧。
 func _build_pulp_samples(h: int, seg_len: float,
 		basis: Basis, is_tip: bool = false) -> Array:
 	var palmar := Vector3.ZERO
@@ -1913,7 +1913,7 @@ func _build_pulp_samples(h: int, seg_len: float,
 	n_world = n_world.normalized()
 	var n_local: Vector3 = (basis.inverse() * n_world).normalized()
 	var out: Array = []
-	for t in [-0.45, -0.225, 0.0, 0.225, 0.45]:
+	for t in [-0.49, -0.30, -0.10, 0.10, 0.30, 0.49]:
 		var z: float = seg_len * float(t)
 		for a in [-1.0, -0.5, 0.0, 0.5, 1.0]:
 			var dir: Vector3 = n_local.rotated(Vector3.BACK, float(a)).normalized()
