@@ -95,8 +95,10 @@ GDExtension 任务先运行 `gdextension\build.bat`。
 - MPM/SPH 未做；C++ 只构建 Windows editor 目标；Linux/导出/GPU 未做。
 - 服务端权威粒子同步、网络、正式存档未接（按 Phase 1 策略延后）。
 
-## 下一步（需要决策）
+## 下一步（已决策：全物理主动布娃娃，见 [PHYSICAL_BODY.md](PHYSICAL_BODY.md)）
 
+0. **M8**：全物理主动布娃娃。先做独立站立/迈步原型，不改主控制器；
+   站立稳定后再替换 CharacterBody，并删除所有 `_carry_body` 瞬移。
 1. **进入 M5**：服务端权威、网络同步、正式存档；
 2. 继续优化 M3：分帧构建、精细 patch 增量、消除初次 3 s 卡顿；
 3. 人体真实骨骼/肌腱/肌肉系统（见 WISHES.md §2）；

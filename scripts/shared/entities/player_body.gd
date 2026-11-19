@@ -129,6 +129,9 @@ const BONE_SECTIONS := {
 	"radius_ulna": {"outer": 0.019, "inner": 0.012}, # 桡尺骨
 	"metacarpal": {"outer": 0.008, "inner": 0.005},  # 掌骨
 	"phalanx": {"outer": 0.0065, "inner": 0.004},    # 指骨
+	"femur": {"outer": 0.014, "inner": 0.009},       # 股骨
+	"tibia": {"outer": 0.012, "inner": 0.008},       # 胫骨
+	"foot_bone": {"outer": 0.010, "inner": 0.007},   # 跖骨/足骨
 }
 
 # ============================================================
@@ -209,6 +212,11 @@ const JOINT_MOMENT_ARMS := {
 	"finger_pip": 0.003,  # m
 	"finger_dip": 0.002,  # m
 	"thumb_cmc_adduct": 0.008,  # m，拇指 CMC 内收/外展（对掌）
+	# 下肢力臂：髋/膝/踝的肌肉力矩也按「肌力 × 解剖力臂」推导，
+	# 不在全物理布娃娃场景里写死。数值是成人量级近似。
+	"hip": 0.12,          # m
+	"knee": 0.08,         # m
+	"ankle": 0.04,        # m
 }
 
 ## 不主动发力时肌肉维持姿势的静力支撑占比（肌紧张/姿态反射）。
