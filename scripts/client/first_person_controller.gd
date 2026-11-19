@@ -306,7 +306,7 @@ func _physics_process(delta: float) -> void:
 	velocity = tangent_velocity + sky * vertical_speed
 
 	# 跳跃
-	if Input.is_action_just_pressed("interact") and is_on_floor():
+	if Input.is_action_just_pressed("jump") and is_on_floor():
 		velocity += sky * jump_velocity
 
 	# 主要动作：用当前身体力量对前方近场地面施力（土→粒子，岩石→碎片）
@@ -2643,7 +2643,7 @@ func _update_finger_hud() -> void:
 	_finger_hud.text = (
 		"Fingers: %s | joint %s %.0f deg | ` cycle\n"
 		+ "Arm: %s %.0f deg | F cycle | wheel\n"
-		+ "1-5/6-0 toggle | E grip | wheel arm | Ctrl crouch / C toggle\n%s\n%s"
+		+ "1-5/6-0 toggle | E grip | Space jump | wheel arm | Ctrl crouch / C toggle\n%s\n%s"
 	) % [selected_text, joints[_selected_joint], finger_angle,
 		ARM_JOINT_LABELS[_selected_arm_joint], arm_angle, terrain_line, strength_line]
 
