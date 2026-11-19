@@ -2188,13 +2188,13 @@ func _build_fingers_on_hand(hand_root: Node3D, h: int, skin) -> void:
 			base.position = Vector3(spread[f - 1], 0.0, -0.055)
 		hand_root.add_child(base)
 
-		# 四指近节 4.6 cm / 中节 2.6 / 末节 2.0 = 9.2 cm，接近真人食指。
+		# 四指近节 4.6 cm / 中节 3.9 / 末节 3.0 = 11.5 cm（后两节各加长 50%）。
 		# 近节太短（3.4 cm）时，合拢后的钩子围出的内径只有 1.6 cm。
 		# 拇指三节（掌骨 3.0 + 近节 2.2 + 末节 1.6 = 6.8 cm）。真人拇指
 		# 从 CMC 到指尖约等于掌宽（10 cm）的 0.65-0.7；之前 9.9 cm 和
 		# 掌宽一样长，对掌时指尖会甩到掌外 9 cm 才折回，永远够不到
 		# 掌前的握持口袋。
-		var lengths: Array = [0.046, 0.026, 0.020] if f > 0 else [0.030, 0.022, 0.016]
+		var lengths: Array = [0.046, 0.039, 0.030] if f > 0 else [0.030, 0.022, 0.016]
 		var pivots: Array = []
 		var parent: Node3D = base
 		for j in range(lengths.size()):

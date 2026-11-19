@@ -332,5 +332,9 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
    55°/80° 停住。现在控制层按 `THUMB_JOINT_LIMITS_DEG` /
    `FINGER_JOINT_LIMITS_DEG` 逐关节夹紧。
 
+另按用户要求把**四指后两节各加长 50%**：中节 2.6→3.9 cm、末节
+2.0→3.0 cm，四指总长 11.5 cm；指骨、碰撞胶囊、皮肉扫掠都按新长度
+自动重建。
+
 新增测试 `test_thumb_range`：控制层三个上限 + 冻结手掌后逐个关节实际
 达到相对屈曲上限，6/6。`test_finger_grip` 在该改动后仍 PASS。
