@@ -358,3 +358,24 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 
 `test_thumb_range` 6/6 保持通过。`test_physical_hand` 在 headless 下
 退出挂死是已知的 3D 物理线程问题，与本次改动无关。
+
+## 13. 2026-11-19 竖立试抓木棍
+
+文件：[scripts/client/world_renderer.gd](scripts/client/world_renderer.gd)
+
+用户抓木棍时手部会被木棍顶偏，需要一个稳定、竖直、在出生点附近的
+测试目标。新增内容开发期道具：
+
+- `test_stick_enabled`（默认开）在出生点前方 1.6 m 生成一根
+  Ø4 cm × 1.1 m 的橡木棍（`item_id=900001`，质量由材料密度 × 体积
+  推导，约 1.04 kg）；
+- 原点放在木棍**底端**，局部 Y = 地表法线，所以木棍竖直；刚体中心
+  再抬高半个长度，底部离地 1 cm；
+- 木棍先 `freeze = true`（静态），不会自己倒；头顶有 `TEST STICK` 标签；
+- 右键按住且指腹碰到它（手掌距离 < 45 cm 也可）时释放成普通动态
+  `ItemPhysicsBody`，之后按正常物理抓取/倒下；
+- 抓取仍由 `_update_finger_pads` 的指腹层负责；指骨胶囊只碰地面/
+  手掌/身体，不碰物品层。
+
+注意：这是测试夹具，不是「物品可以静止站立」的玩法规则；正式发布前
+把 `test_stick_enabled` 和 `test_yard_enabled` 一起关掉。

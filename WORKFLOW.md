@@ -46,6 +46,9 @@
 - 拇指控制范围：CMC 80° / MCP 55° / IP 80°，控制层与肌肉层使用
   同一张上限表（`test_thumb_range` 6/6）；轴由 `test_thumb_axes` 验证，
   对掌/屈曲不会互换；皮肉从掌缘 CMC 窝起扫，不再接四指共用的掌中根点；
+- 出生点前方 1.6 m 有一根 `TEST STICK`（Ø4 cm × 1.1 m，约 1.04 kg）：
+  先冻结直立，右键按住并碰到/手掌靠近 45 cm 后释放成普通动态木棍，
+  用于复现抓取时手部被顶偏；`WorldRenderer.test_stick_enabled` 控制；
 - 土 → C++ DEM 粒子（最多 1200 个，MultiMesh 凸碎片模板）；
 - 岩石 → `FractureGenerator` 破裂成独立 `ItemEntity`；
 - DEM 粒子有局部地面平面；静止粒子每 2 s 合并回 `MatterDelta`；

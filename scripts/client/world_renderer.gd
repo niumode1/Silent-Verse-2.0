@@ -13,6 +13,8 @@ extends Node3D
 @export var tree_scale: float = 1.0
 ## 内容开发期：在出生点前方生成材料试验场。正式发布前应关掉。
 @export var test_yard_enabled: bool = false
+## 内容开发期：在出生点前方立一根竖直木棍，方便测抓取。发布前关掉。
+@export var test_stick_enabled: bool = true
 ## 近场物质地面：出生点周围 3×3 个 8 m 格块，静态地表在洞口处 discard。
 @export var near_field_enabled: bool = true
 ## LOD：玩家周围 180 m 的单块高精度物质地面（4 m 格）
@@ -52,6 +54,9 @@ var _matter_delta: MatterDelta = null
 var _particle_systems: Array = []
 ## 最近一次 debug_strike 的结果，供测试读取
 var last_strike_result: Dictionary = {}
+## 出生点前方的竖直试抓木棍（内容开发期测试道具）。
+## 它先冻结直立，右键碰到它时释放成普通动态物品，方便测抓取。
+var _test_vertical_sticks: Array = []
 
 ## 可见地表网格的顶点半径，供玩家贴地采样
 var _surface_heights: Array = []
@@ -109,6 +114,11 @@ func _ready() -> void:
 		world_items.append_array(yard)
 		print("Material test yard: ", yard.size(), " samples")
 
+	# 内容开发期：出生点前方一根竖立木棍，方便直接测抓取。
+	# 它先直立冻结，右键碰到后释放；正式发布前和试验场一起关掉。
+	if test_stick_enabled:
+		world_items.append(_create_test_stick())
+
 	_report_spawn_surroundings(world_items)
 	_aim_sun_at_spawn()
 	_generate_water_mesh()
@@ -129,20 +139,33 @@ func _ready() -> void:
 		player.call_deferred("spawn_on_surface", spawn_point, spawn_look_target)
 
 
-func _create_test_stick(spawn_point: Vector3, spawn_look_target: Vector3) -> ItemEntity:
+func _create_test_stick() -> ItemEntity:
 	var up := spawn_point.normalized()
-	var forward := (spawn_look_target - spawn_point).normalized()
-	var ground_radius := world_generator.terrain.get_surface_radius(spawn_point)
-	var stick_pos := up * (ground_radius + 0.6)  # 抬高 0.6 m
-	stick_pos += forward * 3.0  # 前方 3 m
+	# 视线方向投影到地表切平面：出生点指向树的弦不能直接当水平方向。
+	var forward := spawn_look_target - spawn_point
+	forward -= up * forward.dot(up)
+	if forward.length() < 0.05:
+		forward = up.cross(Vector3.RIGHT)
+	forward = forward.normalized()
+
+	# 沿球面走 1.6 m，找到那里的真实地表半径。
+	var offset: float = 1.6
+	var base_dir := (up + forward * (offset / world_generator.planet_radius)).normalized()
+	var base_ground: float = world_generator.terrain.get_surface_radius(
+		base_dir * world_generator.planet_radius)
 
 	var stick := ItemEntity.new()
-	stick.item_id = 10001
-	stick.shape = "fiber"
+	stick.item_id = 900001
 	stick.material_id = "oak_wood"
-	stick.dimensions = {"length": 0.8, "width": 0.04, "height": 0.04}  # 细长木棍
-	stick.transform = Transform3D(Basis.IDENTITY, stick_pos)
-	stick.instance_seed = 12345
+	stick.shape = "fiber"
+	stick.dimensions = {"length": 1.1, "diameter": 0.04}
+	stick.grain_dir_local = Vector3.UP  # 木纹沿木轴
+	stick.temperature_c = 20.0
+	# 原点放在**底端**，basis 的局部 Y = 地表法线，木棍因此竖直。
+	stick.transform = Transform3D(ItemGeometry.basis_from_up(base_dir),
+		base_dir * base_ground)
+	stick.set_in_world(stick.transform)
+	stick.set_meta("vertical_test_stick", true)
 	return stick
 
 
@@ -661,6 +684,7 @@ func _rebuild_terrain_collision_hole(center: Vector3,
 
 func _process(_delta: float) -> void:
 	_update_particle_systems(_delta)
+	_update_test_sticks()
 	if not near_field_enabled or _matter_field == null or _player == null:
 		return
 	var position: Vector3 = _player.global_position
@@ -669,6 +693,38 @@ func _process(_delta: float) -> void:
 	if position.distance_to(_near_stream_position) < near_field_stream_move_m:
 		return
 	_generate_near_ground(position)
+
+
+## 竖直试抓木棍：先直立冻结，右键按住且指腹已经碰到它时释放。
+## 这样不用任何夹具/支架，木棍也不会在玩家还没伸手前自己倒掉。
+func _update_test_sticks() -> void:
+	if _test_vertical_sticks.is_empty() or _player == null:
+		return
+	if not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+		return
+	var touch: Array = _player.get("_pulp_touch")
+	for body in _test_vertical_sticks:
+		if body == null or not is_instance_valid(body) or not body.freeze:
+			continue
+		var id: int = (body as Node).get_instance_id()
+		var touching := false
+		for h in range(touch.size()):
+			if (touch[h] as Dictionary).has(id):
+				touching = true
+				break
+		if not touching:
+			# 指腹射线偶尔会从两根手指之间穿过去；手掌已经伸到棍子
+			# 附近时也给一个释放条件，避免测试道具僵在那里拿不到。
+			var palms: Array = _player.get("_palm_bodies")
+			var center: Vector3 = (body as Node3D).global_position
+			for p in palms:
+				if is_instance_valid(p) \
+						and (p as Node3D).global_position.distance_to(center) < 0.45:
+					touching = true
+					break
+		if touching:
+			body.freeze = false
+			print("Test stick: released for grabbing")
 
 
 ## 调试入口：保持旧测试可用。
@@ -1076,9 +1132,17 @@ func _generate_world_items(items: Array) -> void:
 	_items_root = Node3D.new()
 	_items_root.name = "WorldItems"
 	add_child(_items_root)
+	_test_vertical_sticks.clear()
 
 	for item in items:
-		_items_root.add_child(_build_item_body(item))
+		var body := _build_item_body(item)
+		_items_root.add_child(body)
+		if item.has_meta("vertical_test_stick"):
+			body.freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
+			body.freeze = true
+			_test_vertical_sticks.append(body)
+			print("Test vertical stick: mass=%.2f kg center=%s" % [
+				body.mass, str(body.global_position.snapped(Vector3.ONE * 0.01))])
 
 	print("World items (dynamic): ", items.size(), " (stones / logs / ore outcrops)")
 
@@ -1113,6 +1177,17 @@ func _build_item_body(item: ItemEntity) -> ItemPhysicsBody:
 		var col := CollisionShape3D.new()
 		col.shape = collision_shape as Shape3D
 		body.add_child(col)
+
+	if item.has_meta("vertical_test_stick"):
+		var stick_label := Label3D.new()
+		stick_label.text = "TEST STICK"
+		stick_label.font_size = 32
+		stick_label.pixel_size = 0.0012
+		stick_label.outline_size = 8
+		stick_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		stick_label.no_depth_test = true
+		stick_label.position = Vector3(0.0, 0.68, 0.0)
+		body.add_child(stick_label)
 
 	# 试验场样品在头顶挂一个调试标签（材料 / 硬度 / 密度 / 相态）
 	if item.has_meta("test_label"):
@@ -1166,8 +1241,13 @@ func _build_item_body(item: ItemEntity) -> ItemPhysicsBody:
 	if item.has_meta("test_yard"):
 		lift = _resting_height(item) + 0.02
 
-	body.transform = Transform3D(item.transform.basis, dir * (visible_ground + lift))
-	body.fallback_position = dir * (visible_ground + lift)
+	var spawn_origin: Vector3 = dir * (visible_ground + lift)
+	if item.has_meta("vertical_test_stick"):
+		# 竖直木棍的原点是底端，刚体中心要再抬高半个长度。
+		var stick_len: float = float(dims.get("length", 1.0))
+		spawn_origin = dir * (visible_ground + stick_len * 0.5 + 0.01)
+	body.transform = Transform3D(item.transform.basis, spawn_origin)
+	body.fallback_position = spawn_origin
 	body.ground_radius_sampler = Callable(self, "_sample_mesh_radius")
 	body.set_meta("spawn_pos", body.transform.origin)
 	body.set_meta("spawn_dir", dir)
