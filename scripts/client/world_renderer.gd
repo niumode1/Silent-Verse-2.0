@@ -1163,7 +1163,7 @@ func _build_item_body(item: ItemEntity) -> ItemPhysicsBody:
 		body.angular_damp = 0.20
 	body.continuous_cd = true
 	body.collision_layer = 1
-	body.collision_mask = 7  # 地形(2)+树/物品(1)+手(4)，不与玩家(8)碰撞避免飞天
+	body.collision_mask = 7 | 16  # 地形(2)+树/物品(1)+手(4)+软皮壳(16)，不与玩家(8)碰撞避免飞天
 
 	# 用材料真实摩擦/恢复系数驱动滑动、滚动和停距
 	var item_material = item.get_material()

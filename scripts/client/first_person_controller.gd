@@ -75,6 +75,10 @@ var _finger_seg_lengths: Array = []   # [hand][finger] = [prox_len, mid_len, dis
 var _palm_bodies: Array = []          # [hand] RigidBody3D 手掌（腕关节末端）
 var _last_hand_ground_strike_ms: int = 0
 var _finger_segments: Array = []      # [hand][finger] = [RigidBody3D x3]
+## [hand][finger][seg] = 软皮外壳刚体。它套在骨芯外面（9 mm），只和
+## 物品层碰撞，通过 6DOF 关节挂在指骨上；物品先撞到连续软皮壳，
+## 不会从离散射线采样点之间穿过去。
+var _finger_skins: Array = []
 ## [hand] 拇指 CMC 的过渡刚体：掌骨与手掌之间多串一个无碰撞刚体，
 ## 两个铰链（内收 + 屈曲）合起来才是两自由度 CMC。见 [_build_fingers_for_hand]。
 var _thumb_cradle: Array = []
@@ -1061,6 +1065,7 @@ const PULP_GROUND_DAMPING := 35.0
 func _build_hand_physics() -> void:
 	_palm_bodies.clear()
 	_finger_segments.clear()
+	_finger_skins.clear()
 	_thumb_cradle.clear()
 	_thumb_adduct_joint.clear()
 	_pulp_pads.clear()
@@ -1594,6 +1599,9 @@ func _break_bone(c: Dictionary) -> void:
 			for f in range(_finger_segments[h].size()):
 				for seg in _finger_segments[h][f]:
 					_detached_from_palm[(seg as Node).get_instance_id()] = true
+				if h < _finger_skins.size():
+					for skin in _finger_skins[h][f]:
+						_detached_from_palm[(skin as Node).get_instance_id()] = true
 		_bone_message = "骨折：%s（%.0f / %.0f N·m）" % [c["label"], c["load"], c["limit"]]
 	else:
 		var f: int = int(c["finger"])
@@ -1602,6 +1610,10 @@ func _break_bone(c: Dictionary) -> void:
 		_disable_joint(_finger_joints[h][f][j])
 		for k in range(j, _finger_segments[h][f].size()):
 			_detached_from_palm[_finger_segments[h][f][k].get_instance_id()] = true
+			if h < _finger_skins.size() and f < _finger_skins[h].size() \
+					and k < (_finger_skins[h][f] as Array).size():
+				_detached_from_palm[(_finger_skins[h][f][k]
+					as Node).get_instance_id()] = true
 		_bone_message = "骨折：指骨（%.1f / %.1f N·m）" % [c["load"], c["limit"]]
 	print("[Bone] ", _bone_message)
 
@@ -1616,8 +1628,10 @@ func _disable_joint(joint: HingeJoint3D) -> void:
 
 func _build_fingers_for_hand(h: int, palm: RigidBody3D) -> void:
 	var hand_segments: Array = []
+	var hand_skins: Array = []
 	# 先把本手容器挂进去，循环内才能回头引用已建好的相邻指骨
 	_finger_segments.append(hand_segments)
+	_finger_skins.append(hand_skins)
 	var hand_pads: Array = []
 	_pulp_pads.append(hand_pads)
 	_pulp_touch.append({})
@@ -1673,12 +1687,14 @@ func _build_fingers_for_hand(h: int, palm: RigidBody3D) -> void:
 
 	for f in range(5):
 		var finger_segments: Array = []
+		var finger_skins: Array = []
 		var joint_count: int = (_finger_seg_lengths[h][f] as Array).size()
 		finger_actives.append(_zeros(joint_count))
 		hand_grip.append(_zeros_f(joint_count))
 		hand_broken.append(_bools(joint_count))
 		# 先挂容器，j>0 时才能引用同一根手指的上一节
 		hand_segments.append(finger_segments)
+		hand_skins.append(finger_skins)
 		var finger_pads: Array = []
 		hand_pads.append(finger_pads)
 		for j in range(joint_count):
@@ -1693,12 +1709,9 @@ func _build_fingers_for_hand(h: int, palm: RigidBody3D) -> void:
 			# 重力由 _update_hand_physics 按径向施加，不走世界 -Y
 			seg.gravity_scale = 0.0
 			seg.collision_layer = 4
-			# 5 mm 骨芯保留和物品的硬碰撞，专门防「软皮射线漏检时
-			# 手指直接穿过细木棍」。硬胶囊埋在 4 mm 软皮下面，正常
-			# 接触仍由 [_update_finger_pads] 的分布弹簧先接触；只有
-			# 软皮被压穿、或手指运动太快跨过软皮采样时，骨芯才兜底。
-			# 连续碰撞（CCD）已在下面打开，细木棍也不会被一步跨过。
-			seg.collision_mask = 1 | 2 | 4 | 128
+			# 骨芯只负责地面/手掌/身体；物品由外面的 9 mm 软皮壳
+			# （layer 16）接触，骨芯不再直接撞物品。
+			seg.collision_mask = 2 | 4 | 128
 			seg.linear_damp = 0.15
 			seg.angular_damp = 0.35
 			# 指骨几何惯量只有 ~4e-6 kg·m²。60 Hz 下这个惯量配肌肉力矩
@@ -1732,7 +1745,81 @@ func _build_fingers_for_hand(h: int, palm: RigidBody3D) -> void:
 			col.rotation.x = PI * 0.5
 			seg.add_child(col)
 
+			# 连续软皮壳：9 mm 半径的实心胶囊，只和物品层碰撞。
+			# 它是独立刚体，通过 6DOF 关节软挂在指骨上；物品先撞到
+			# 这层连续表面，不会从软皮射线采样点之间穿过去。关节的
+			# 1 mm 线性余量给皮肉一点压缩量，避免变成纯硬碰撞。
+			var skin_body := RigidBody3D.new()
+			skin_body.name = "FingerSkin_%d_%d_%d" % [h, f, j]
+			skin_body.mass = 0.008
+			skin_body.gravity_scale = 0.0
+			skin_body.can_sleep = false
+			skin_body.collision_layer = 16
+			skin_body.collision_mask = 1
+			skin_body.linear_damp = 0.9
+			skin_body.angular_damp = 0.9
+			skin_body.inertia = Vector3(2e-4, 2e-4, 2e-4)
+			skin_body.continuous_cd = true
+			skin_body.contact_monitor = true
+			skin_body.max_contacts_reported = 4
+			var skin_phys := PhysicsMaterial.new()
+			skin_phys.friction = 1.25
+			skin_phys.bounce = 0.0
+			skin_body.physics_material_override = skin_phys
+			var skin_col := CollisionShape3D.new()
+			var shell := CapsuleShape3D.new()
+			shell.radius = FINGER_FLESH_RADIUS
+			shell.height = maxf(seg_len, FINGER_FLESH_RADIUS * 2.0 + 0.001)
+			skin_col.shape = shell
+			skin_col.rotation.x = PI * 0.5
+			skin_body.add_child(skin_col)
+			_hand_physics_root.add_child(skin_body)
+			skin_body.global_transform = Transform3D(basis, center)
+
+			var skin_joint := Generic6DOFJoint3D.new()
+			_hand_physics_root.add_child(skin_joint)
+			skin_joint.global_transform = Transform3D(basis, center)
+			skin_joint.node_a = skin_joint.get_path_to(seg)
+			skin_joint.node_b = skin_joint.get_path_to(skin_body)
+			skin_joint.set_flag_x(
+				Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_LIMIT, true)
+			skin_joint.set_flag_y(
+				Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_LIMIT, true)
+			skin_joint.set_flag_z(
+				Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_LIMIT, true)
+			skin_joint.set_flag_x(
+				Generic6DOFJoint3D.FLAG_ENABLE_ANGULAR_LIMIT, true)
+			skin_joint.set_flag_y(
+				Generic6DOFJoint3D.FLAG_ENABLE_ANGULAR_LIMIT, true)
+			skin_joint.set_flag_z(
+				Generic6DOFJoint3D.FLAG_ENABLE_ANGULAR_LIMIT, true)
+			skin_joint.set_param_x(
+				Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, -0.001)
+			skin_joint.set_param_x(
+				Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, 0.001)
+			skin_joint.set_param_y(
+				Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, -0.001)
+			skin_joint.set_param_y(
+				Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, 0.001)
+			skin_joint.set_param_z(
+				Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, -0.001)
+			skin_joint.set_param_z(
+				Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, 0.001)
+			skin_joint.set_param_x(
+				Generic6DOFJoint3D.PARAM_ANGULAR_LOWER_LIMIT, 0.0)
+			skin_joint.set_param_x(
+				Generic6DOFJoint3D.PARAM_ANGULAR_UPPER_LIMIT, 0.0)
+			skin_joint.set_param_y(
+				Generic6DOFJoint3D.PARAM_ANGULAR_LOWER_LIMIT, 0.0)
+			skin_joint.set_param_y(
+				Generic6DOFJoint3D.PARAM_ANGULAR_UPPER_LIMIT, 0.0)
+			skin_joint.set_param_z(
+				Generic6DOFJoint3D.PARAM_ANGULAR_LOWER_LIMIT, 0.0)
+			skin_joint.set_param_z(
+				Generic6DOFJoint3D.PARAM_ANGULAR_UPPER_LIMIT, 0.0)
+
 			finger_segments.append(seg)
+			finger_skins.append(skin_body)
 			finger_pads.append(_build_pulp_samples(h, seg_len, basis,
 				j == joint_count - 1))
 
@@ -2028,6 +2115,20 @@ func _update_finger_pads(h: int) -> void:
 						other.apply_force(force, off_other)
 
 
+	# 9 mm 软皮壳与物品的硬接触也要计入「指腹接触」：E 握持约束和
+	# 试抓木棍的释放逻辑都靠 _pulp_touch，不能只看射线层。
+	if h < _finger_skins.size():
+		for f in range(_finger_skins[h].size()):
+			for j in range((_finger_skins[h][f] as Array).size()):
+				var skin_body: RigidBody3D = _finger_skins[h][f][j]
+				if skin_body == null or not is_instance_valid(skin_body):
+					continue
+				for other in skin_body.get_colliding_bodies():
+					if other is ItemPhysicsBody and h < _pulp_touch.size():
+						(_pulp_touch[h] as Dictionary)[
+							(other as Node).get_instance_id()] = true
+
+
 ## M2b：手掌/手指真正接触地面时，按接触力自动对近场地面施力。
 ## 不需要按键；每 300 ms 最多触发一次。
 func _check_hand_ground_contact() -> void:
@@ -2112,6 +2213,11 @@ func _update_hand_physics() -> void:
 			for f in range(5):
 				for j in range((_finger_segments[h][f] as Array).size()):
 					_carry_body(_finger_segments[h][f][j], palm_delta, _detached_from_palm)
+			if h < _finger_skins.size():
+				for f in range(_finger_skins[h].size()):
+					for j in range((_finger_skins[h][f] as Array).size()):
+						_carry_body(_finger_skins[h][f][j], palm_delta,
+							_detached_from_palm)
 
 		# 径向重力（球面星球；世界 -Y 只在赤道朝下）
 		for body in [roll, upper, fore, twist, palm]:
@@ -2120,6 +2226,11 @@ func _update_hand_physics() -> void:
 			for j in range((_finger_segments[h][f] as Array).size()):
 				var seg: RigidBody3D = _finger_segments[h][f][j]
 				seg.apply_central_force(-sky * seg.mass * g)
+		if h < _finger_skins.size():
+			for f in range(_finger_skins[h].size()):
+				for j in range((_finger_skins[h][f] as Array).size()):
+					var skin: RigidBody3D = _finger_skins[h][f][j]
+					skin.apply_central_force(-sky * skin.mass * g)
 		if h < _thumb_cradle.size():
 			var cradle: RigidBody3D = _thumb_cradle[h]
 			cradle.apply_central_force(-sky * cradle.mass * g)

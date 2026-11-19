@@ -324,7 +324,7 @@ func _spawn_stick() -> void:
 	_stick.angular_damp = 0.2
 	_stick.continuous_cd = false
 	_stick.collision_layer = 1
-	_stick.collision_mask = 15
+	_stick.collision_mask = 15 | 16
 	# _stick_debug 用 get_colliding_bodies() 报接触对象；不打开接触监控
 	# 时引擎每帧报 "Parameter contact_monitor is null"
 	_stick.contact_monitor = true
