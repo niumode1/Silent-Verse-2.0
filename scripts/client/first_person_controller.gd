@@ -607,9 +607,10 @@ func _rebuild_body_skin() -> void:
 				cur.append([_body_root.to_local(wrist_w), 0.034, skin_col])
 			if wrist_broken:
 				pieces.append(cur)
-				cur = [[_body_root.to_local(wrist_palm_w), 0.04, skin_col]]
-			cur.append([_body_root.to_local(palm_w), 0.045, skin_col])
-			cur.append([_body_root.to_local(knuckle_w), 0.04, skin_col])
+				cur = [[_body_root.to_local(wrist_palm_w), 0.024, skin_col]]
+			# 手掌段只保留一条细连接，扁平掌面由 PalmFlat 盒负责
+			cur.append([_body_root.to_local(palm_w), 0.026, skin_col])
+			cur.append([_body_root.to_local(knuckle_w), 0.022, skin_col])
 			pieces.append(cur)
 			for piece in pieces:
 				_skin_chain(piece)
@@ -1141,6 +1142,16 @@ func _build_arm_rig(h: int) -> RigidBody3D:
 	palm_shape.size = Vector3(0.10, 0.016, 0.11)
 	palm_col.shape = palm_shape
 	palm.add_child(palm_col)
+
+	# 扁平掌面：可见皮肉不再用扫掠圆管（会看起来像一根粗手指），
+	# 改成贴合掌盒的扁盒；指骨根部仍从 z=-0.055 长出去。
+	var palm_visual := MeshInstance3D.new()
+	palm_visual.name = "PalmFlat"
+	var palm_mesh := BoxMesh.new()
+	palm_mesh.size = Vector3(0.10, 0.018, 0.11)
+	palm_visual.mesh = palm_mesh
+	palm_visual.material_override = _body_skin
+	palm.add_child(palm_visual)
 	_hand_physics_root.add_child(palm)
 	# 先摆到出生姿态，再建关节，否则关节会按原点建立后被撕裂
 	palm.global_transform = hand_root.global_transform
