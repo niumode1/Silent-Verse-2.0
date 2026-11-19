@@ -207,14 +207,11 @@ func _physics_process(_delta: float) -> void:
 		var up: Vector3 = _torso.global_transform.basis.y.normalized()
 		pitch = atan2(up.z, up.y)
 		pitch_rate = _torso.angular_velocity.x
-	var h_capture: float = sqrt(maxf(com.y, 0.1) / 9.81)
-	var desired_cop_z: float = com.z + _com_vel.z * h_capture
-	var err_z: float = desired_cop_z - cop.z
-	var desired_cop_x: float = com.x + _com_vel.x * h_capture
-	var err_x: float = desired_cop_x - cop.x
-	var ankle_balance: float = clampf(err_z * 2.0, -0.5, 0.5)
-	var hip_balance: float = clampf(-err_z * 1.2, -0.4, 0.4)
-	var roll_balance: float = clampf(err_x * 1.5, -0.35, 0.35)
+	var err_z: float = com.z - cop.z
+	var err_x: float = com.x - cop.x
+	var ankle_balance: float = clampf(err_z * 2.0, -0.30, 0.30)
+	var hip_balance: float = clampf(err_z * 2.0, -0.5, 0.5)
+	var roll_balance: float = clampf(-err_x * 1.5, -0.25, 0.25)
 	if _frames % 30 == 0:
 		print("  f%d balance err_x=%.3f err_z=%.3f roll=%.1f° ankle=%.1f°" % [
 			_frames, err_x, err_z, rad_to_deg(roll_balance),
