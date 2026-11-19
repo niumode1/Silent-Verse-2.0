@@ -576,6 +576,10 @@ func _rebuild_body_skin() -> void:
 			var upper: RigidBody3D = _arm_bodies[h]["upper"]
 			var fore: RigidBody3D = _arm_bodies[h]["forearm"]
 			var palm_body: RigidBody3D = _palm_bodies[h]
+			# 掌面扁平方向 = 手掌局部 Y，换算到 BodyRoot 局部系
+			var palm_normal_local: Vector3 = (
+				_body_root.global_transform.basis.inverse()
+				* palm_body.global_transform.basis.y).normalized()
 			var half_u: float = UPPER_ARM_LENGTH * 0.5
 			var half_f: float = FOREARM_LENGTH * 0.5
 			var shoulder_w: Vector3 = upper.global_transform * Vector3(0.0, half_u, 0.0)
@@ -607,29 +611,33 @@ func _rebuild_body_skin() -> void:
 				cur.append([_body_root.to_local(wrist_w), 0.034, skin_col])
 			if wrist_broken:
 				pieces.append(cur)
-				cur = [[_body_root.to_local(wrist_palm_w), 0.024, skin_col]]
-			# 手掌段只保留一条细连接，扁平掌面由 PalmFlat 盒负责
-			cur.append([_body_root.to_local(palm_w), 0.026, skin_col])
-			cur.append([_body_root.to_local(knuckle_w), 0.022, skin_col])
+				cur = [[_body_root.to_local(wrist_palm_w), 0.024, skin_col, 0.7]]
+			# 掌段沿手掌法线压扁：宽度保持，厚度收到约 1/3，
+			# 是原来的连续皮肉变扁，不是额外插一块板
+			cur.append([_body_root.to_local(palm_w), 0.026, skin_col, 0.35])
+			cur.append([_body_root.to_local(knuckle_w), 0.022, skin_col, 0.5])
 			pieces.append(cur)
 			for piece in pieces:
-				_skin_chain(piece)
+				_skin_chain(piece, palm_normal_local)
 		else:
 			var arm: Dictionary = _arm_pivots[h]
 			var shoulder: Node3D = arm["shoulder"]
 			var elbow: Node3D = arm["elbow"]
 			var wrist: Node3D = arm["wrist"]
 			var hand: Node3D = _hand_roots[h]
+			var hand_normal_local: Vector3 = (
+				_body_root.global_transform.basis.inverse()
+				* hand.global_transform.basis.y).normalized()
 			_skin_chain([
 				[Vector3(0.14 * side, 1.22, -0.01), 0.075, skin_col],
 				[_body_root.to_local(shoulder.global_position), 0.065, skin_col],
 				[_body_root.to_local(elbow.global_position), 0.048, skin_col],
 				[_body_root.to_local(wrist.global_position), 0.034, skin_col],
 				[_body_root.to_local(hand.global_transform * Vector3(0.0, 0.0, -0.02)),
-					0.045, skin_col],
+					0.045, skin_col, 0.35],
 				[_body_root.to_local(hand.global_transform * Vector3(0.0, 0.0, -0.06)),
-					0.04, skin_col],
-			])
+					0.04, skin_col, 0.5],
+			], hand_normal_local)
 
 	# 手指：真物理指骨是刚体，位姿每帧由物理决定；皮肉同样沿整根
 	# 手指一次扫掠，指节处不会露出分段的碰撞胶囊。
@@ -708,12 +716,13 @@ func _rebuild_body_skin() -> void:
 
 
 ## 把控制点细分后扫掠成管状曲面；控制点格式 [位置, 半径, 颜色]
-func _skin_chain(ctrl: Array) -> void:
+func _skin_chain(ctrl: Array, flatten_dir: Vector3 = Vector3.ZERO) -> void:
 	if ctrl.size() < 2:
 		return
 	var pts: Array = []
 	var radii: Array = []
 	var colors: Array = []
+	var flats: Array = []
 	for i in range(ctrl.size() - 1):
 		var p0: Vector3 = ctrl[i][0]
 		var p1: Vector3 = ctrl[i + 1][0]
@@ -721,6 +730,9 @@ func _skin_chain(ctrl: Array) -> void:
 		var r1: float = ctrl[i + 1][1]
 		var c0: Color = ctrl[i][2]
 		var c1: Color = ctrl[i + 1][2]
+		# 可选第 4 项：该点在 flatten_dir 方向上的厚度缩放（1=圆管，0.35=扁）
+		var f0: float = float(ctrl[i][3]) if ctrl[i].size() > 3 else 1.0
+		var f1: float = float(ctrl[i + 1][3]) if ctrl[i + 1].size() > 3 else 1.0
 		var steps: int = maxi(1, int(ceil(p0.distance_to(p1) / SKIN_CHAIN_SPACING)))
 		# 跨度异常（断骨飞出去、姿态撕裂）时步数会爆炸，每帧几万个
 		# 顶点把主线程拖死。封顶 16 步 = 0.72 m，正常肢体远够。
@@ -731,13 +743,16 @@ func _skin_chain(ctrl: Array) -> void:
 			pts.append(p0.lerp(p1, t))
 			radii.append(lerpf(r0, r1, t))
 			colors.append(c0.lerp(c1, t))
+			flats.append(lerpf(f0, f1, t))
 	pts.append(ctrl[-1][0])
 	radii.append(ctrl[-1][1])
 	colors.append(ctrl[-1][2])
-	_sweep_tube(pts, radii, colors)
+	flats.append(float(ctrl[-1][3]) if ctrl[-1].size() > 3 else 1.0)
+	_sweep_tube(pts, radii, colors, flats, flatten_dir)
 
 
-func _sweep_tube(pts: Array, radii: Array, colors: Array) -> void:
+func _sweep_tube(pts: Array, radii: Array, colors: Array,
+		flats: Array = [], flatten_dir: Vector3 = Vector3.ZERO) -> void:
 	var n: int = pts.size()
 	if n < 2:
 		return
@@ -772,11 +787,21 @@ func _sweep_tube(pts: Array, radii: Array, colors: Array) -> void:
 		var ring: Array = []
 		var ring_normals: Array = []
 		var r: float = radii[i]
+		var flat: float = float(flats[i]) if i < flats.size() else 1.0
+		var fdir := flatten_dir.normalized() if flatten_dir.length() > 0.001 \
+			else Vector3.ZERO
 		for j in range(SKIN_RING_SEGMENTS):
 			var ang: float = TAU * float(j) / float(SKIN_RING_SEGMENTS)
 			var dir: Vector3 = (u * cos(ang) + v * sin(ang)).normalized()
-			ring.append(pts[i] + dir * r)
-			ring_normals.append(dir)
+			var offset: Vector3 = dir * r
+			if fdir != Vector3.ZERO and flat < 0.999:
+				# 只压扁沿 flatten_dir 的厚度分量，宽度不变：手掌从圆管
+				# 变成扁掌，而不是插一块平板
+				var comp: Vector3 = fdir * offset.dot(fdir)
+				offset -= comp * (1.0 - flat)
+			ring.append(pts[i] + offset)
+			ring_normals.append(offset.normalized() if offset.length() > 0.0001
+				else dir)
 		rings.append({"pts": ring, "normals": ring_normals})
 
 	for i in range(n - 1):
@@ -1142,16 +1167,6 @@ func _build_arm_rig(h: int) -> RigidBody3D:
 	palm_shape.size = Vector3(0.10, 0.016, 0.11)
 	palm_col.shape = palm_shape
 	palm.add_child(palm_col)
-
-	# 扁平掌面：可见皮肉不再用扫掠圆管（会看起来像一根粗手指），
-	# 改成贴合掌盒的扁盒；指骨根部仍从 z=-0.055 长出去。
-	var palm_visual := MeshInstance3D.new()
-	palm_visual.name = "PalmFlat"
-	var palm_mesh := BoxMesh.new()
-	palm_mesh.size = Vector3(0.10, 0.018, 0.11)
-	palm_visual.mesh = palm_mesh
-	palm_visual.material_override = _body_skin
-	palm.add_child(palm_visual)
 	_hand_physics_root.add_child(palm)
 	# 先摆到出生姿态，再建关节，否则关节会按原点建立后被撕裂
 	palm.global_transform = hand_root.global_transform
