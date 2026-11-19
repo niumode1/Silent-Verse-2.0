@@ -119,6 +119,10 @@ const BONE_ELASTIC_MODULUS := 17.0e9       # Pa
 ## 避免拿一根木棍就骨折。玩法平衡定稿后再改回 1.0。
 var bone_strength_multiplier: float = 8.0
 
+## 临时平衡：手指/拇指肌肉力矩倍率。手指被木棍一顶就张开是因为
+## 关节马达力矩小于外载；先放大，避免抓握时手指变形。
+var finger_strength_multiplier: float = 8.0
+
 ## 各骨段的骨皮质外径/内径 (m)，真实解剖量级
 const BONE_SECTIONS := {
 	"humerus": {"outer": 0.025, "inner": 0.016},     # 肱骨
@@ -215,7 +219,10 @@ const PASSIVE_SUPPORT_RATIO := 0.5
 
 ## 某一关节当前能输出的最大力矩 N·m
 func get_joint_max_torque(joint: String) -> float:
-	return get_max_force() * float(JOINT_MOMENT_ARMS.get(joint, 0.0))
+	var torque: float = get_max_force() * float(JOINT_MOMENT_ARMS.get(joint, 0.0))
+	if joint.begins_with("finger") or joint.begins_with("thumb"):
+		torque *= finger_strength_multiplier
+	return torque
 
 ## 不主动控制时该关节的支撑力矩 N·m
 func get_joint_passive_torque(joint: String) -> float:
