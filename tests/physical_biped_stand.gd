@@ -9,6 +9,8 @@
 # ============================================================
 extends Node3D
 
+const ContactForceProbeScript = preload("res://scripts/client/contact_force_probe.gd")
+
 const TORSO_MASS := 28.0
 const THIGH_MASS := 7.0
 const SHIN_MASS := 4.0
@@ -43,8 +45,8 @@ func _ready() -> void:
 
 
 func _make_body(label: String, mass: float, size: Vector3,
-		pos: Vector3) -> RigidBody3D:
-	var body := RigidBody3D.new()
+		pos: Vector3, probe: bool = false) -> RigidBody3D:
+	var body: RigidBody3D = ContactForceProbeScript.new() if probe 		else RigidBody3D.new()
 	body.name = label
 	body.mass = mass
 	body.gravity_scale = 1.0
@@ -120,26 +122,34 @@ func _build_leg(side: float) -> void:
 		Vector3(x, 0.29, 0.0))
 	var foot := _make_body("Foot_%s" % ("L" if side < 0.0 else "R"),
 		FOOT_MASS, Vector3(0.12, 0.08, 0.28),
-		Vector3(x, 0.04, -0.05))
+		Vector3(x, 0.04, -0.05), true)
 
-	var hip := _make_hinge(_torso, thigh, Vector3(x, HIP_Y, 0.0),
-		"hip", deg_to_rad(-80.0), deg_to_rad(35.0))
+	# 髋外展/内收：躯干 ↔ 小过渡体 ↔ 大腿。第二自由度是侧向
+	# 平衡（手臂侧伸、单脚、斜坡）必需的；只有髋屈伸无法纠侧倾。
+	var hip_roll_body := _make_body("HipRoll_%s" % ("L" if side < 0.0 else "R"),
+		0.05, Vector3(0.04, 0.04, 0.04), Vector3(x, HIP_Y, 0.0))
+	hip_roll_body.gravity_scale = 0.0
+	hip_roll_body.collision_mask = 0
+
+	var hip_roll := _make_hinge(_torso, hip_roll_body, Vector3(x, HIP_Y, 0.0),
+		Vector3.BACK, "hip_roll", deg_to_rad(-35.0), deg_to_rad(35.0))
+	var hip := _make_hinge(hip_roll_body, thigh, Vector3(x, HIP_Y, 0.0),
+		Vector3.RIGHT, "hip", deg_to_rad(-80.0), deg_to_rad(35.0))
 	var knee := _make_hinge(thigh, shin, Vector3(x, KNEE_Y, 0.0),
-		"knee", deg_to_rad(-8.0), deg_to_rad(145.0))
+		Vector3.RIGHT, "knee", deg_to_rad(-8.0), deg_to_rad(145.0))
 	var ankle := _make_hinge(shin, foot, Vector3(x, ANKLE_Y, 0.0),
-		"ankle", deg_to_rad(-30.0), deg_to_rad(30.0))
+		Vector3.RIGHT, "ankle", deg_to_rad(-30.0), deg_to_rad(30.0))
 	_legs.append({
-		"thigh": thigh, "shin": shin, "foot": foot,
-		"hip": hip, "knee": knee, "ankle": ankle,
+		"thigh": thigh, "shin": shin, "foot": foot, "hip_roll_body": hip_roll_body,
+		"hip_roll": hip_roll, "hip": hip, "knee": knee, "ankle": ankle,
 	})
 
 
 func _make_hinge(a: PhysicsBody3D, b: PhysicsBody3D, pos: Vector3,
-		muscle: String, lower: float, upper: float) -> HingeJoint3D:
+		axis: Vector3, muscle: String, lower: float, upper: float) -> HingeJoint3D:
 	var joint := HingeJoint3D.new()
 	add_child(joint)
-	var axis := Vector3.RIGHT
-	var z := axis
+	var z := axis.normalized()
 	var x := z.cross(Vector3.UP)
 	if x.length() < 0.01:
 		x = z.cross(Vector3.RIGHT)
