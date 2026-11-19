@@ -41,6 +41,8 @@
 
 - `primary_action`（左键）用玩家身体力量对前方地面施力；
 - 手掌接触 `TerrainBody`/`GroundCollision` >50 N 时自动对真实接触点施力；
+- 抓握辅助（右键按住）：拇指按「CMC 对掌(Y) → CMC 屈曲(Z) → MCP/IP(X)」
+  顺序收拢；轴由 `test_thumb_axes` 验证，对掌/屈曲不会互换；
 - 土 → C++ DEM 粒子（最多 1200 个，MultiMesh 凸碎片模板）；
 - 岩石 → `FractureGenerator` 破裂成独立 `ItemEntity`；
 - DEM 粒子有局部地面平面；静止粒子每 2 s 合并回 `MatterDelta`；

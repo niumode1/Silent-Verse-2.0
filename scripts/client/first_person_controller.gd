@@ -75,6 +75,9 @@ var _selected_arm_joint: int = 0
 var _finger_seg_lengths: Array = []   # [hand][finger] = [prox_len, mid_len, dist_len]
 var _palm_bodies: Array = []          # [hand] RigidBody3D 手掌（腕关节末端）
 var _last_hand_ground_strike_ms: int = 0
+## 抓握辅助：右键按住时按「对掌 → 屈曲 → MCP/IP」顺序驱动拇指
+var _thumb_assist_active: bool = false
+var _thumb_assist_start_ms: int = 0
 var _finger_segments: Array = []      # [hand][finger] = [RigidBody3D x3]
 ## [hand] 拇指 CMC 的过渡刚体：掌骨与手掌之间多串一个无碰撞刚体，
 ## 两个铰链（内收 + 屈曲）合起来才是两自由度 CMC。见 [_build_fingers_for_hand]。
@@ -243,6 +246,11 @@ func _input(event: InputEvent) -> void:
 			_is_sprinting = event.pressed
 		if event.pressed and event.keycode == KEY_C:
 			_is_crouching = not _is_crouching
+	if event is InputEventMouseButton \
+			and event.button_index == MOUSE_BUTTON_RIGHT:
+		_thumb_assist_active = event.pressed
+		if event.pressed:
+			_thumb_assist_start_ms = Time.get_ticks_msec()
 
 
 func _physics_process(delta: float) -> void:
@@ -1746,6 +1754,18 @@ func _carry_body(body: RigidBody3D, delta: Transform3D,
 
 
 ## 某个肌肉关节当前可用力矩：主动控制时满力，静止时只有静力支撑
+## 抓握辅助阶段：0 = 对掌(Y)，1 = 屈曲(Z)，2 = MCP/IP(X) 包裹。
+func _thumb_assist_phase() -> int:
+	if not _thumb_assist_active:
+		return 0
+	var elapsed: int = Time.get_ticks_msec() - _thumb_assist_start_ms
+	if elapsed < 300:
+		return 0
+	if elapsed < 600:
+		return 1
+	return 2
+
+
 func _joint_torque(muscle: String, active: bool) -> float:
 	if _player_body == null:
 		return 0.0
@@ -1773,9 +1793,13 @@ func _update_finger_muscles(h: int, palm: RigidBody3D, fore: RigidBody3D,
 				for j in range(angs.size()):
 					var lim: float = float(FINGER_JOINT_LIMITS_DEG[j])
 					grip = maxf(grip, clampf(float(angs[j]) / lim, 0.0, 1.0))
-			# 内收轴是掌 +y，正角把拇指从桡侧扫向掌前（掌 -z），
-			# 正好是四指根部握持口袋的方向。
-			var target: float = deg_to_rad(grip * thumb_adduct_max_deg)
+			# 对掌轴 = 手掌 +Y：负责把指腹翻向掌心，是捏握主力。
+			# 抓握辅助阶段 0 优先把它拉满，再让屈曲轴做前后微调。
+			var target: float
+			if _thumb_assist_active:
+				target = deg_to_rad(thumb_adduct_max_deg)
+			else:
+				target = deg_to_rad(grip * thumb_adduct_max_deg)
 			var torque: float = _joint_torque("thumb_cmc_adduct", true)
 			joint.set_param(HingeJoint3D.PARAM_MOTOR_MAX_IMPULSE, torque * dt)
 			joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY,
@@ -1794,6 +1818,17 @@ func _update_finger_muscles(h: int, palm: RigidBody3D, fore: RigidBody3D,
 				float(_finger_angles[h][f][j]), 0.0, limit_deg)
 			var joint: HingeJoint3D = _finger_joints[h][f][j]
 			var active: bool = int(_finger_active_until[h][f][j]) > now_ms
+			# 抓握辅助：拇指按「对掌(Y) → 屈曲(Z) → MCP/IP(X)」顺序收拢。
+			# 对掌轴负责翻面，屈曲轴负责伸出，二者不互换。
+			if _thumb_assist_active and f == 0:
+				var phase := _thumb_assist_phase()
+				active = phase > 0
+				if j == 0:
+					target_deg = 50.0 if phase >= 1 else 0.0  # CMC 屈曲
+				elif j == 1:
+					target_deg = 70.0 if phase >= 2 else 0.0  # MCP
+				else:
+					target_deg = 60.0 if phase >= 2 else 0.0  # IP
 			var muscle_key := "finger_mcp" if j == 0 else (
 				"finger_pip" if j == 1 else "finger_dip")
 			var torque: float = _joint_torque(muscle_key, active)

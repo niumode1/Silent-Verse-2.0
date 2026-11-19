@@ -176,6 +176,8 @@
   `PlayerBody.get_max_force() × 2`，工具材质用 `bone`（手骨）；
   G 键调试入口已移除。土生成 C++ DEM 粒子，岩石生成独立 ItemEntity
   碎片；移除同时写入 `MatterDelta`。
+- **抓握辅助**：右键按住，拇指先 CMC 对掌(+Y)翻指腹，再屈曲(Z)调前后，
+  最后 MCP/IP(X)包裹；`test_thumb_axes` 10/10 验证轴不互换。
 - **自动接触触发（M2b）**：手掌的 `ContactForceProbe` 报告与
   `TerrainBody`/`GroundCollision` 的接触力 >50 N 时，每 300 ms 对真实
   接触点施力；不再需要按键。headless 无法模拟手部落下，需窗口实测。
