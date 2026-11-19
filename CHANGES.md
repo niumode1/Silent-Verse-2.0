@@ -650,3 +650,19 @@ centroidal momentum control），而不是继续单关节试符号。
 
 已通过的核心回归：`test_finger_grip`、`test_thumb_range`、
 `test_grip_assist`、`test_arm_walk`、`test_arm_load`。
+
+## 27. 2026-11-20 刚性雕像诊断与双脚踝原型
+
+新增两个独立诊断场景（不接入主游戏）：
+
+- `rigid_statue_probe`：一个 RigidBody3D 的复合碰撞体（躯干+腿+脚），
+  不加任何控制，10 s 后 **PASS**，位置/姿态保持。说明平地接触、
+  重心和脚底支撑本身没有问题。
+- `physical_biped_ankle`：把脚拆成独立刚体，用 2 自由度踝
+  （pitch/roll 过渡体）连接，尝试躯干 pitch/roll 的 PD → 踝马达。
+  当前仍 FAIL：pitch/roll 两种符号都试过，脚底很快失去接触或
+  身体翻倒；把小腿碰撞去掉、让脚承担全部重量后同样失败。
+
+结论：底座（单刚体）能站，问题集中在**踝关节动力学/接触与控制器**
+这一层，而不是地面几何。下一步先把双脚踝的接触和力矩方向做对，
+再逐段拆膝/髋；仍然没有假平衡/瞬移。
