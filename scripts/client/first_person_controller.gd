@@ -24,13 +24,15 @@ const ContactForceProbeScript = preload("res://scripts/client/contact_force_prob
 ## 拇指根在手掌局部系的位置（x 会乘左右手符号）
 @export var thumb_base_local: Vector3 = Vector3(0.054, -0.013, 0.008)
 ## 拇指掌骨 / 近节 / 末节长度（m）
-@export var thumb_seg_lengths: Array[float] = [0.045, 0.032, 0.024]
+@export var thumb_seg_lengths: Array[float] = [0.030, 0.022, 0.016]
 ## 四指近节 / 中节 / 末节长度（m）
 @export var finger_seg_lengths: Array[float] = [0.046, 0.026, 0.020]
 ## 拇指 CMC 内收最大角度（对掌）
-@export_range(0.0, 120.0) var thumb_adduct_max_deg: float = 70.0
+@export_range(0.0, 120.0) var thumb_adduct_max_deg: float = 0.0
 ## 掌盒厚度（m）
 @export_range(0.008, 0.05) var palm_thickness: float = 0.016
+
+@export var thumb_grip_assist_enabled: bool = false
 
 @export_group("Body Shape")
 @export var torso_hip_radius: float = 0.145
