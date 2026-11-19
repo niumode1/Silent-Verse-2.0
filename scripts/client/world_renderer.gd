@@ -700,7 +700,9 @@ func _process(_delta: float) -> void:
 func _update_test_sticks() -> void:
 	if _test_vertical_sticks.is_empty() or _player == null:
 		return
-	if not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+	var grip_intent: bool = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) \
+		or bool(_player.get("_grip_assist_closed"))
+	if not grip_intent:
 		return
 	var touch: Array = _player.get("_pulp_touch")
 	for body in _test_vertical_sticks:

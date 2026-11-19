@@ -14,6 +14,10 @@ extends RigidBody3D
 
 ## 上一物理步所有接触冲量之和换算出的等效力（世界坐标，N）
 var contact_force: Vector3 = Vector3.ZERO
+## 低通后的接触力（世界坐标，N）。骨骼断裂判定用它：单帧接触冲量在
+## 60 Hz 下会把「落地/碰一下」放大成上千牛，直接拿瞬时值判会把指骨
+## 一碰就判断。80 ms 时间常数对应软组织/关节液的缓冲。
+var contact_force_filtered: Vector3 = Vector3.ZERO
 ## 上一物理步最强接触的对方刚体（没有则为 null）
 var contact_body: Object = null
 ## 该接触的世界坐标接触点与法线（法线指向本刚体外部）
@@ -44,6 +48,8 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 			contact_normal = state.get_contact_local_normal(i)
 			contact_impulse = magnitude
 	contact_force = impulse / maxf(state.step, 0.0001)
+	var alpha: float = clampf(state.step / 0.08, 0.0, 1.0)
+	contact_force_filtered = contact_force_filtered.lerp(contact_force, alpha)
 	if strongest <= 0.0:
 		contact_body = null
 		contact_impulse = 0.0

@@ -48,6 +48,15 @@ var _finger_pivots: Array = []      # [hand][finger] = [prox_pivot, mid_pivot, d
 var _finger_angles: Array = []      # [hand][finger] = [prox_deg, mid_deg, dist_deg]
 var _selected_fingers: Array = [[false, false, false, false, false], [false, false, false, false, false]]
 var _selected_joint: int = 0
+## E 键握持辅助：四指和拇指一起慢慢卷到握姿，再按 E 张开。
+## 手默认是伸直的；只靠右键逐个关节调很难把手指真正贴合木棍。
+var _grip_assist_closed: bool = false
+var _grip_assist_engaged: bool = false
+## 握持辅助目标角（度）：先让四指弯成钩子，拇指压住，掌心才有
+## 足够大的皮肉接触面。全部在解剖上限内。
+const FINGER_GRASP_DEG := [70.0, 80.0, 55.0]
+const THUMB_GRASP_DEG := [70.0, 55.0, 70.0]
+const GRIP_ASSIST_SPEED_DEG := 160.0
 var _finger_hud: Label = null
 var _hud_timer: float = 0.0
 
@@ -226,6 +235,10 @@ func _input(event: InputEvent) -> void:
 			_is_sprinting = event.pressed
 		if event.pressed and event.keycode == KEY_C:
 			_is_crouching = not _is_crouching
+		if event.pressed and event.keycode == KEY_E:
+			_grip_assist_closed = not _grip_assist_closed
+			_grip_assist_engaged = true
+			_update_finger_hud()
 
 
 func _physics_process(delta: float) -> void:
@@ -323,6 +336,7 @@ func _physics_process(delta: float) -> void:
 		_stuck_time = 0.0
 
 	_update_orientation()
+	_update_grip_assist(delta)
 	_update_hand_physics()
 	_check_hand_ground_contact()
 
@@ -1000,12 +1014,18 @@ const PULP_THICKNESS := 0.004
 const PULP_STIFFNESS := 2600.0
 const PULP_DAMPING := 14.0
 ## 皮肉对接触物体的切向摩擦系数（干燥皮肤 - 木/骨面量级）
-const PULP_FRICTION := 1.1
+const PULP_FRICTION := 1.25
+## 皮肉对地面的摩擦系数。地面是静止的，没有「抓握」需求；取低值
+## 避免指尖一贴地就被静摩擦粘住，走开时把手臂拉成橡皮筋。
+const PULP_GROUND_FRICTION := 0.55
 ## 切向摩擦的粘性系数（N·s/m）：只用来在没有相对滑动时给出静摩擦
 ## 的「预压量」，超过 μ·Fn 就饱和成库仑摩擦。取大值是为了让
 ## 慢速滑动（几 cm/s）也能拿到接近 μ·Fn 的摩擦力——否则物体沿指腹
 ## 慢慢往下溜时，粘性项太小，握持会像涂了油。
 const PULP_TANGENT_DAMPING := 300.0
+## 地面接触的切向粘性系数。地面不需要静摩擦锁定；只要少量粘性
+## 防止采样点抖动。
+const PULP_GROUND_DAMPING := 35.0
 
 
 func _build_hand_physics() -> void:
@@ -1466,7 +1486,9 @@ func _load_moment(joint_pos: Vector3, bodies: Array, sky: Vector3, g: float) -> 
 			continue
 		var rb: RigidBody3D = node
 		var force: Vector3 = -sky * rb.mass * g
-		var contact: Variant = rb.get("contact_force")
+		var contact: Variant = rb.get("contact_force_filtered")
+		if not (contact is Vector3):
+			contact = rb.get("contact_force")
 		if contact is Vector3:
 			force += contact
 		moment += (rb.global_position - joint_pos).cross(force)
@@ -1640,10 +1662,10 @@ func _build_fingers_for_hand(h: int, palm: RigidBody3D) -> void:
 			# 重力由 _update_hand_physics 按径向施加，不走世界 -Y
 			seg.gravity_scale = 0.0
 			seg.collision_layer = 4
-			# 指骨胶囊负责地面 / 手掌 / 身体的硬接触；物品（层 1）交给
-			# 指腹软组织层 [_update_finger_pads] 的分布弹簧，避免硬胶囊
-			# 把木棍当楔子顶出去。手指必须和手掌、相邻手指正常碰撞，
-			# 少了 4 这一层，手指会直接卷进掌心的碰撞体里。
+			# 硬接触只保留「手掌/相邻手指/身体」和一层 5 mm 骨芯地面
+			# 兜底。地面和物品的正常接触由 [_update_finger_pads] 的软皮
+			# 层负责：软皮层有 25+ 个采样点，能贴合木棍；硬胶囊不再直接
+			# 撞物品，避免单点楔入和碰一下就骨折。
 			seg.collision_mask = 2 | 4 | 128
 			seg.linear_damp = 0.15
 			seg.angular_damp = 0.35
@@ -1669,12 +1691,11 @@ func _build_fingers_for_hand(h: int, palm: RigidBody3D) -> void:
 			# 整根手指连续扫掠，避免关节处露出分段。
 			var col := CollisionShape3D.new()
 			var shape := CapsuleShape3D.new()
-			# 硬接触胶囊按**可见皮肉半径**建（9 mm），不是骨半径 5 mm：
-			# 5 mm 时可见手指会先扎进地面 4 mm，骨头才停，看起来像指尖
-			# 被地面吸住/带弹性。物品层已从碰撞掩码里去掉，抓握改由
-			# [_update_finger_pads] 的 5 mm 骨面 + 4 mm 软组织层负责。
-			shape.radius = FINGER_FLESH_RADIUS
-			shape.height = maxf(seg_len, FINGER_FLESH_RADIUS * 2.0 + 0.001)
+			# 硬胶囊是骨芯（5 mm）；外面 4 mm 的软皮由
+			# [_update_finger_pads] 负责，连地面一起贴合。骨芯保留地面
+			# 碰撞只作为「软皮被压穿」时的最后止挡。
+			shape.radius = FINGER_BONE_RADIUS
+			shape.height = seg_len
 			col.shape = shape
 			col.rotation.x = PI * 0.5
 			seg.add_child(col)
@@ -1848,10 +1869,10 @@ func _update_finger_muscles(h: int, palm: RigidBody3D, fore: RigidBody3D,
 	_update_finger_pads(h)
 
 
-## 指腹采样点：沿指骨长度取 4 站、掌侧 ±46° 取 3 条，共 12 个点。
-## 每个点是骨面外侧、即皮肉表面的位置，和它向外的法线。运行时每个点
-## 各撑一根弹簧：物体压进哪几个点，反力就分布在哪个面上，而不是像
-## 硬胶囊那样只压在一条接触线上。
+## 软皮采样点：沿指骨长度取 5 站、掌侧 ±57° 取 5 条，共 25 个点
+## （末节再加 5 个指尖点）。每个点是骨面外侧、即皮肉表面的位置和
+## 法线；运行时每个点各撑一根弹簧。采样越密，木棍压进来时受力越
+## 分散，接触面积越接近真实指腹，而不是 12 个离散点。
 func _build_pulp_samples(h: int, seg_len: float,
 		basis: Basis, is_tip: bool = false) -> Array:
 	var palmar := Vector3.ZERO
@@ -1867,9 +1888,9 @@ func _build_pulp_samples(h: int, seg_len: float,
 	n_world = n_world.normalized()
 	var n_local: Vector3 = (basis.inverse() * n_world).normalized()
 	var out: Array = []
-	for t in [-0.45, -0.15, 0.15, 0.45]:
+	for t in [-0.45, -0.225, 0.0, 0.225, 0.45]:
 		var z: float = seg_len * float(t)
-		for a in [-0.8, 0.0, 0.8]:
+		for a in [-1.0, -0.5, 0.0, 0.5, 1.0]:
 			var dir: Vector3 = n_local.rotated(Vector3.BACK, float(a)).normalized()
 			out.append({
 				"p": dir * FINGER_BONE_RADIUS + Vector3(0.0, 0.0, z),
@@ -1879,7 +1900,7 @@ func _build_pulp_samples(h: int, seg_len: float,
 		# 末节远端是半球（骨头自己的胶囊端帽）。物体被手指卷到指尖
 		# 外侧时，接触发生在这一圈，只取沿骨轴的采样点会漏掉。
 		var tip_center := Vector3(0.0, 0.0, -seg_len * 0.5)
-		for a in [-0.6, 0.0, 0.6]:
+		for a in [-0.8, -0.4, 0.0, 0.4, 0.8]:
 			var d: Vector3 = (Vector3(0.0, 0.0, -1.0)
 				+ n_local.rotated(Vector3.BACK, float(a))).normalized()
 			out.append({"p": tip_center + d * FINGER_BONE_RADIUS, "n": d})
@@ -1922,11 +1943,12 @@ func _update_finger_pads(h: int) -> void:
 			for pt in pts:
 				var p_world: Vector3 = xf * (pt["p"] as Vector3)
 				var n_world: Vector3 = (xf.basis * (pt["n"] as Vector3)).normalized()
-				# 从皮肉面外侧朝骨面打一条短射线：只关心物体有没有
-				# 压进这 4 mm 的软组织层。
+				# 从皮肉面外侧朝骨面打一条短射线：物体或地面压进
+				# 这 4 mm 的软组织层多少，就顶回多少。射线掩码 3 =
+				# 物品层(1) + 地形层(2)：软皮同时贴合木棍和地面。
 				var q := PhysicsRayQueryParameters3D.create(
 					p_world + n_world * PULP_THICKNESS,
-					p_world - n_world * 0.002, 1)
+					p_world - n_world * 0.002, 3)
 				q.exclude = [seg.get_rid()]
 				var hit: Dictionary = space.intersect_ray(q)
 				if hit.is_empty():
@@ -1935,11 +1957,12 @@ func _update_finger_pads(h: int) -> void:
 				var depth: float = PULP_THICKNESS - (hp - p_world).dot(n_world)
 				if depth <= 0.0:
 					continue
-				depth = minf(depth, PULP_THICKNESS + 0.003)
+				depth = minf(depth, PULP_THICKNESS + 0.004)
 				var off_seg: Vector3 = hp - seg.global_position
 				var v_seg: Vector3 = seg.linear_velocity \
 					+ seg.angular_velocity.cross(off_seg)
 				var other := hit["collider"] as RigidBody3D
+				var static_contact: bool = other == null or other.freeze
 				var v_other := Vector3.ZERO
 				var off_other := Vector3.ZERO
 				if other != null:
@@ -1956,8 +1979,14 @@ func _update_finger_pads(h: int) -> void:
 				var vt: Vector3 = rel - n_world * vn
 				var ft := Vector3.ZERO
 				if vt.length() > 1e-4:
-					ft = -vt.normalized() * minf(PULP_FRICTION * fn,
-						vt.length() * PULP_TANGENT_DAMPING)
+					# 地面/冻结物用低摩擦、低粘性：软皮可以贴住但不能
+					# 把指尖锁死；可动物体才用高摩擦抓握。
+					var mu: float = PULP_GROUND_FRICTION if static_contact \
+						else PULP_FRICTION
+					var damp: float = PULP_GROUND_DAMPING if static_contact \
+						else PULP_TANGENT_DAMPING
+					ft = -vt.normalized() * minf(mu * fn,
+						vt.length() * damp)
 				var force: Vector3 = n_world * fn + ft
 				seg.apply_force(-force, off_seg)
 				if other != null:
@@ -1988,9 +2017,14 @@ func _check_hand_ground_contact() -> void:
 		var collider_name: String = (collider as Node).name
 		if collider_name != "TerrainBody" and collider_name != "GroundCollision":
 			continue
-		var force_n: float = probe.contact_force.length()
+		# 用低通后的接触力，并把单次施力限制在人体能主动发出的量级。
+		# 直接拿 Jolt 的瞬时冲量/dt 会读出上万牛（手质量大或穿透时），
+		# 让一次扶地变成把地面炸开，也会把手臂弹飞。
+		var force_n: float = probe.contact_force_filtered.length()
 		if force_n < 50.0:
 			continue
+		var max_push: float = maxf(_player_body.get_max_force() * 2.0, 200.0)
+		force_n = minf(force_n, max_push)
 		var point: Vector3 = probe.contact_point
 		if point.length() < 1.0:
 			continue
@@ -2261,6 +2295,33 @@ func _apply_finger_pose() -> void:
 				pivot.rotation.x = -deg_to_rad(float(angles[j]))
 
 
+## E 键握持辅助：把全部手指慢慢卷到握姿（或张回 0°）。
+## 只改目标角，真正的出力仍由 [_update_finger_muscles] 按肌力 × 力臂
+## 计算，不绕过物理。这样手指会形成钩子，指腹软皮层才有面积贴住木棍。
+func _update_grip_assist(delta: float) -> void:
+	if not _grip_assist_engaged or _finger_angles.is_empty():
+		return
+	var now: int = Time.get_ticks_msec()
+	var all_done := true
+	for h in range(_finger_angles.size()):
+		for f in range(_finger_angles[h].size()):
+			var angles: Array = _finger_angles[h][f]
+			var targets: Array = THUMB_GRASP_DEG if f == 0 else FINGER_GRASP_DEG
+			for j in range(angles.size()):
+				var want: float = float(targets[j]) if _grip_assist_closed else 0.0
+				var cur: float = float(angles[j])
+				if absf(cur - want) > 0.5:
+					all_done = false
+					angles[j] = move_toward(cur, want,
+						GRIP_ASSIST_SPEED_DEG * delta)
+					if h < _finger_active_until.size() \
+							and f < (_finger_active_until[h] as Array).size():
+						_finger_active_until[h][f][j] = now + 100
+	if all_done:
+		_grip_assist_engaged = false
+	_apply_finger_pose()
+
+
 func _select_finger(hand: int, finger: int) -> void:
 	_selected_fingers[hand][finger] = not _selected_fingers[hand][finger]
 	_update_finger_hud()
@@ -2405,7 +2466,7 @@ func _update_finger_hud() -> void:
 	_finger_hud.text = (
 		"Fingers: %s | joint %s %.0f deg | ` cycle\n"
 		+ "Arm: %s %.0f deg | F cycle | wheel\n"
-		+ "1-5/6-0 toggle | wheel arm | Ctrl hold crouch / C toggle\n%s\n%s"
+		+ "1-5/6-0 toggle | E grip | wheel arm | Ctrl crouch / C toggle\n%s\n%s"
 	) % [selected_text, joints[_selected_joint], finger_angle,
 		ARM_JOINT_LABELS[_selected_arm_joint], arm_angle, terrain_line, strength_line]
 
