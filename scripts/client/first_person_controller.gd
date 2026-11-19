@@ -1686,11 +1686,12 @@ func _build_fingers_for_hand(h: int, palm: RigidBody3D) -> void:
 			# 重力由 _update_hand_physics 按径向施加，不走世界 -Y
 			seg.gravity_scale = 0.0
 			seg.collision_layer = 4
-			# 硬接触只保留「手掌/相邻手指/身体」和一层 5 mm 骨芯地面
-			# 兜底。地面和物品的正常接触由 [_update_finger_pads] 的软皮
-			# 层负责：软皮层有 25+ 个采样点，能贴合木棍；硬胶囊不再直接
-			# 撞物品，避免单点楔入和碰一下就骨折。
-			seg.collision_mask = 2 | 4 | 128
+			# 5 mm 骨芯保留和物品的硬碰撞，专门防「软皮射线漏检时
+			# 手指直接穿过细木棍」。硬胶囊埋在 4 mm 软皮下面，正常
+			# 接触仍由 [_update_finger_pads] 的分布弹簧先接触；只有
+			# 软皮被压穿、或手指运动太快跨过软皮采样时，骨芯才兜底。
+			# 连续碰撞（CCD）已在下面打开，细木棍也不会被一步跨过。
+			seg.collision_mask = 1 | 2 | 4 | 128
 			seg.linear_damp = 0.15
 			seg.angular_damp = 0.35
 			# 指骨几何惯量只有 ~4e-6 kg·m²。60 Hz 下这个惯量配肌肉力矩
