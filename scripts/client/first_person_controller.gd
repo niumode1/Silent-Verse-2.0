@@ -1640,10 +1640,11 @@ func _build_fingers_for_hand(h: int, palm: RigidBody3D) -> void:
 			# 重力由 _update_hand_physics 按径向施加，不走世界 -Y
 			seg.gravity_scale = 0.0
 			seg.collision_layer = 4
-			# 手指必须和手掌、相邻手指正常碰撞。少了 4 这一层，手指会
-			# 直接卷进掌心的碰撞体里，握拳时空腔只剩 1.5 cm——比任何
-			# 一根树枝都细，手指永远合不到物体周围。
-			seg.collision_mask = 3 | 4 | 128
+			# 指骨胶囊负责地面 / 手掌 / 身体的硬接触；物品（层 1）交给
+			# 指腹软组织层 [_update_finger_pads] 的分布弹簧，避免硬胶囊
+			# 把木棍当楔子顶出去。手指必须和手掌、相邻手指正常碰撞，
+			# 少了 4 这一层，手指会直接卷进掌心的碰撞体里。
+			seg.collision_mask = 2 | 4 | 128
 			seg.linear_damp = 0.15
 			seg.angular_damp = 0.35
 			# 指骨几何惯量只有 ~4e-6 kg·m²。60 Hz 下这个惯量配肌肉力矩
@@ -1655,7 +1656,10 @@ func _build_fingers_for_hand(h: int, palm: RigidBody3D) -> void:
 			# Jolt 刚体休眠后不响应关节马达；手指必须始终可控
 			seg.can_sleep = false
 			var seg_phys := PhysicsMaterial.new()
-			seg_phys.friction = 0.9
+			# 指骨胶囊和地形的摩擦。0.9 时指尖一挨地就被静摩擦粘住，
+			# 玩家走开时手臂被拉成橡皮筋；皮肤对干土的动摩擦更接近
+			# 0.5-0.6，这里取 0.55，抓握仍由指腹层的 μ=1.1 负责。
+			seg_phys.friction = 0.55
 			seg_phys.bounce = 0.0
 			seg.physics_material_override = seg_phys
 			_hand_physics_root.add_child(seg)
@@ -1665,10 +1669,12 @@ func _build_fingers_for_hand(h: int, palm: RigidBody3D) -> void:
 			# 整根手指连续扫掠，避免关节处露出分段。
 			var col := CollisionShape3D.new()
 			var shape := CapsuleShape3D.new()
-			# 硬接触只到骨面（5 mm）；外面 4 mm 的指腹由
-			# [_update_finger_pads] 的分布弹簧层负责。
-			shape.radius = FINGER_BONE_RADIUS
-			shape.height = seg_len
+			# 硬接触胶囊按**可见皮肉半径**建（9 mm），不是骨半径 5 mm：
+			# 5 mm 时可见手指会先扎进地面 4 mm，骨头才停，看起来像指尖
+			# 被地面吸住/带弹性。物品层已从碰撞掩码里去掉，抓握改由
+			# [_update_finger_pads] 的 5 mm 骨面 + 4 mm 软组织层负责。
+			shape.radius = FINGER_FLESH_RADIUS
+			shape.height = maxf(seg_len, FINGER_FLESH_RADIUS * 2.0 + 0.001)
 			col.shape = shape
 			col.rotation.x = PI * 0.5
 			seg.add_child(col)
