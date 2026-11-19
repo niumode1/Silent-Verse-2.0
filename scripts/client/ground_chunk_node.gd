@@ -28,9 +28,7 @@ func refresh() -> void:
 		_build_nodes()
 	var mesh := chunk.build_mesh()
 	_mesh_instance.mesh = mesh
-	var shape := chunk.build_collision_shape()
-	if _collision != null:
-		_collision.shape = shape
+	# patch 不生成碰撞，只用于视觉和挖掘检测
 
 
 func _build_nodes() -> void:
@@ -44,11 +42,7 @@ func _build_nodes() -> void:
 		_mesh_instance.material_override = mat
 		add_child(_mesh_instance)
 
+	# 完全禁用 patch 碰撞体，只保留视觉网格
+	# 碰撞由静态地形提供，patch 只用于挖掘检测和视觉
 	if _body == null:
-		_body = StaticBody3D.new()
-		_body.name = "GroundCollision"
-		_body.collision_layer = 2
-		_body.collision_mask = 0
-		_collision = CollisionShape3D.new()
-		_body.add_child(_collision)
-		add_child(_body)
+		pass  # 不创建碰撞体

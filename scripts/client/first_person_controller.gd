@@ -546,12 +546,13 @@ func _rebuild_body_skin() -> void:
 	var boots_col := Color(0.12, 0.10, 0.08)
 
 	# 躯干：骨盆 → 腰 → 胸廓 → 颈根
+	# 肚子收薄，第一人称低头时能看到腿
 	_skin_chain([
-		[Vector3(0.0, 0.80, 0.02), 0.16, pants_col],
-		[Vector3(0.0, 0.90, 0.01), 0.15, pants_col],
-		[Vector3(0.0, 0.98, 0.0), 0.145, shirt_col],
-		[Vector3(0.0, 1.12, -0.02), 0.19, shirt_col],
-		[Vector3(0.0, 1.25, 0.01), 0.16, shirt_col],
+		[Vector3(0.0, 0.80, 0.02), 0.145, pants_col],
+		[Vector3(0.0, 0.90, 0.01), 0.135, pants_col],
+		[Vector3(0.0, 0.98, 0.0), 0.130, shirt_col],
+		[Vector3(0.0, 1.12, -0.02), 0.155, shirt_col],
+		[Vector3(0.0, 1.25, 0.01), 0.135, shirt_col],
 		[Vector3(0.0, 1.31, 0.05), 0.07, shirt_col],
 	])
 
@@ -607,9 +608,10 @@ func _rebuild_body_skin() -> void:
 				cur.append([_body_root.to_local(wrist_w), 0.034, skin_col])
 			if wrist_broken:
 				pieces.append(cur)
-				cur = [[_body_root.to_local(wrist_palm_w), 0.04, skin_col]]
-			cur.append([_body_root.to_local(palm_w), 0.045, skin_col])
-			cur.append([_body_root.to_local(knuckle_w), 0.04, skin_col])
+				cur = [[_body_root.to_local(wrist_palm_w), 0.030, skin_col]]
+			# 手掌视觉厚度收薄，给手指留出合拢空间
+			cur.append([_body_root.to_local(palm_w), 0.032, skin_col])
+			cur.append([_body_root.to_local(knuckle_w), 0.028, skin_col])
 			pieces.append(cur)
 			for piece in pieces:
 				_skin_chain(piece)

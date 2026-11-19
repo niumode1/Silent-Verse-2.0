@@ -12,7 +12,7 @@ extends Node3D
 @export var water_offset: float = 0.15      # 水面略高于海平面
 @export var tree_scale: float = 1.0
 ## 内容开发期：在出生点前方生成材料试验场。正式发布前应关掉。
-@export var test_yard_enabled: bool = true
+@export var test_yard_enabled: bool = false
 ## 近场物质地面：出生点周围 3×3 个 8 m 格块，静态地表在洞口处 discard。
 @export var near_field_enabled: bool = true
 ## LOD：玩家周围 180 m 的单块高精度物质地面（4 m 格）
@@ -22,8 +22,8 @@ extends Node3D
 @export var fine_patch_enabled: bool = true
 @export var fine_patch_m: float = 12.0
 @export var fine_patch_cell_m: float = 0.5
-## 静态碰撞/视觉洞口半径；patch 半宽必须覆盖洞口 + 50 m 三角面
-@export var near_field_hole_radius: float = 65.0
+## 静态碰撞/视觉洞口半径；暂时禁用开洞避免玩家掉下去
+@export var near_field_hole_radius: float = 0.0
 @export var near_field_stream_move_m: float = 45.0
 
 var world_generator: WorldGenerator = null
@@ -108,6 +108,7 @@ func _ready() -> void:
 			spawn_look_target)
 		world_items.append_array(yard)
 		print("Material test yard: ", yard.size(), " samples")
+
 	_report_spawn_surroundings(world_items)
 	_aim_sun_at_spawn()
 	_generate_water_mesh()
@@ -126,6 +127,23 @@ func _ready() -> void:
 		player.planet_radius = world_generator.planet_radius
 		# 等玩家控制器 _ready() 完成（_camera onready 就绪）后再出生
 		player.call_deferred("spawn_on_surface", spawn_point, spawn_look_target)
+
+
+func _create_test_stick(spawn_point: Vector3, spawn_look_target: Vector3) -> ItemEntity:
+	var up := spawn_point.normalized()
+	var forward := (spawn_look_target - spawn_point).normalized()
+	var ground_radius := world_generator.terrain.get_surface_radius(spawn_point)
+	var stick_pos := up * (ground_radius + 0.6)  # 抬高 0.6 m
+	stick_pos += forward * 3.0  # 前方 3 m
+
+	var stick := ItemEntity.new()
+	stick.item_id = 10001
+	stick.shape = "fiber"
+	stick.material_id = "oak_wood"
+	stick.dimensions = {"length": 0.8, "width": 0.04, "height": 0.04}  # 细长木棍
+	stick.transform = Transform3D(Basis.IDENTITY, stick_pos)
+	stick.instance_seed = 12345
+	return stick
 
 
 # ============================================================
@@ -521,11 +539,8 @@ func _generate_near_ground(center: Vector3 = Vector3.ZERO) -> void:
 
 	var up: Vector3 = center.normalized()
 	var probe: Vector3 = up * world_generator.planet_radius
-	# 网格锚点抬高半个格子：让 y=0 是空气、y=-1 的格子中心落在
-	# 地表下半个格子处（4 m 格 → 表层土，而不是 4 m 深的基岩）。
-	var anchor: Vector3 = up * (
-		world_generator.terrain.get_surface_radius(probe)
-		+ near_field_cell_m * 0.5)
+	# 网格锚点设在地表：让 y=0 层就是地面层，玩家站在上面
+	var anchor: Vector3 = up * world_generator.terrain.get_surface_radius(probe)
 	var forward := up.cross(Vector3.RIGHT)
 	if forward.length() < 0.001:
 		forward = up.cross(Vector3.FORWARD)
@@ -536,7 +551,7 @@ func _generate_near_ground(center: Vector3 = Vector3.ZERO) -> void:
 		/ maxf(near_field_cell_m, 0.25))))
 	var start_ms: int = Time.get_ticks_msec()
 	var patch := GroundChunk.new(_matter_field, anchor, right, forward,
-		near_field_cell_m, cells, cells, -4, 1)
+		near_field_cell_m, cells, cells, -4, 0)  # 只到 y=0，不包含空气层
 	var node := GroundChunkNode.new()
 	node.name = "NearPatch"
 	_near_ground_root.add_child(node)
@@ -549,8 +564,9 @@ func _generate_near_ground(center: Vector3 = Vector3.ZERO) -> void:
 		_surface_shader.set_shader_parameter("hole_center", center)
 		_surface_shader.set_shader_parameter("hole_radius",
 			near_field_hole_radius)
-	# 只在洞口中心移动距离超过半径的一半时才重建碰撞
-	if _collision_hole_center.distance_to(center) > near_field_hole_radius * 0.5:
+	# 首次必须重建碰撞洞，否则玩家会被静态地形卡住
+	if _collision_hole_center == Vector3.ZERO \
+			or _collision_hole_center.distance_to(center) > near_field_hole_radius * 0.5:
 		_rebuild_terrain_collision_hole(center, near_field_hole_radius)
 		_collision_hole_center = center
 	print("Near ground: 1 patch ", near_field_patch_m, " m / ",
@@ -560,6 +576,10 @@ func _generate_near_ground(center: Vector3 = Vector3.ZERO) -> void:
 	# 在玩家周围叠加精细交互 patch（0.5 m 格），用于精细挖掘
 	if fine_patch_enabled:
 		_generate_fine_patch(center)
+
+	# 临时禁用 shader 洞口，确保地面完整显示
+	if _surface_shader != null:
+		_surface_shader.set_shader_parameter("hole_radius", 0.0)
 
 
 ## 玩家周围 12 m / 0.5 m 格的精细交互 patch。叠加在粗 LOD patch 之上，
@@ -580,9 +600,7 @@ func _generate_fine_patch(center: Vector3) -> void:
 
 	var up: Vector3 = center.normalized()
 	var probe: Vector3 = up * world_generator.planet_radius
-	var anchor: Vector3 = up * (
-		world_generator.terrain.get_surface_radius(probe)
-		+ fine_patch_cell_m * 0.5)
+	var anchor: Vector3 = up * world_generator.terrain.get_surface_radius(probe)
 	var forward := up.cross(Vector3.RIGHT)
 	if forward.length() < 0.001:
 		forward = up.cross(Vector3.FORWARD)
@@ -593,7 +611,7 @@ func _generate_fine_patch(center: Vector3) -> void:
 		/ maxf(fine_patch_cell_m, 0.25))))
 	var start_ms: int = Time.get_ticks_msec()
 	var patch := GroundChunk.new(_matter_field, anchor, right, forward,
-		fine_patch_cell_m, cells, cells, -2, 1)
+		fine_patch_cell_m, cells, cells, -2, 0)  # 只到 y=0，不包含空气层
 	var node := GroundChunkNode.new()
 	node.name = "FinePatch"
 	_near_ground_root.add_child(node)
@@ -951,6 +969,8 @@ func _generate_water_mesh() -> void:
 
 
 func _generate_core() -> void:
+	# 核心球体仅供开发参考，禁用以避免视觉混乱
+	return
 	var core_radius: float = world_generator.planet_radius - world_generator.terrain.max_depth - 10.0
 	core_radius = maxf(core_radius, 1.0)
 	var sphere := SphereMesh.new()
@@ -1077,7 +1097,7 @@ func _build_item_body(item: ItemEntity) -> ItemPhysicsBody:
 		body.angular_damp = 0.20
 	body.continuous_cd = true
 	body.collision_layer = 1
-	body.collision_mask = 15  # 地形(2)+树/物品(1)+手(4)+玩家(8)
+	body.collision_mask = 7  # 地形(2)+树/物品(1)+手(4)，不与玩家(8)碰撞避免飞天
 
 	# 用材料真实摩擦/恢复系数驱动滑动、滚动和停距
 	var item_material = item.get_material()
