@@ -82,6 +82,7 @@ GDExtension 任务先运行 `gdextension\build.bat`。
 
 1. **进入 M5**：服务端权威、网络同步、正式存档；
 2. 继续优化 M3：分帧构建、精细 patch 增量、消除初次 3 s 卡顿；
-3. 粒子物理不规则化（DEM 多球/凸体）；
-4. MPM/SPH（湿泥/水）；
-5. Linux/导出构建与 GPU 评估。
+3. 人体真实骨骼/肌腱/肌肉系统（见 WISHES.md §2）；
+4. 粒子物理不规则化（DEM 多球/凸体）；
+5. MPM/SPH（湿泥/水）；
+6. Linux/导出构建与 GPU 评估。
