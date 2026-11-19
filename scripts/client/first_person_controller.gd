@@ -920,12 +920,11 @@ const FINGER_JOINT_LIMITS_DEG := [90.0, 100.0, 70.0]
 ## 口袋（离腕根 5.5-7.8 cm）。真人拇指从 CMC 到指尖约 10 cm，其中掌骨
 ## 占 4-5 cm。
 const THUMB_JOINT_LIMITS_DEG := [80.0, 90.0, 80.0]
-## 拇指 CMC 内收（对掌）的最大角度。内收轴是掌 y，只能把这根拇指
-## 在水平面里从 −x 摆到 ±z：45° 只到掌前，够不到对侧；要横跨到四指
-## 根部得转过 ~110°。但实测这两种幅度都会在合拢时贴着木棍高度横扫，
-## 把木棍推出掌心（0,2 段接触力 60-117N），所以暂时关掉内收（=0），
-## 只保留两自由度机构和几何，等握持控制改成「按物体半径收指」再启用。
-const THUMB_ADDUCT_MAX_DEG := 0.0
+## 拇指 CMC 内收（对掌）的最大角度。内收轴是掌 y，正角把拇指从
+## 桡侧横跨到掌前，扫向四指围出的握持口袋（掌 -z 方向），指尖才能
+## 和食指/中指形成对掌。70° 时诊断里指尖 z≈-0.023，与四指尖 -0.026
+## 基本重合。
+const THUMB_ADDUCT_MAX_DEG := 70.0
 ## 手指目标角速度（rad/s）。只在张开/自由屈曲时用于估算角速度。
 const FINGER_CLOSE_SPEED := 4.0
 ## 指屈肌最大收缩角速度（rad/s）。健康手指空载全屈约 0.3-0.4 s，
@@ -1757,9 +1756,9 @@ func _update_finger_muscles(h: int, palm: RigidBody3D, fore: RigidBody3D,
 				for j in range(angs.size()):
 					var lim: float = float(FINGER_JOINT_LIMITS_DEG[j])
 					grip = maxf(grip, clampf(float(angs[j]) / lim, 0.0, 1.0))
-			# 内收轴是掌 +y，正向旋转把拇指从侧向甩向腕侧（掌 +z）；
-			# 对掌要往指尖侧（掌 -z）扫到四指根部的握持口袋，所以取负。
-			var target: float = -deg_to_rad(grip * THUMB_ADDUCT_MAX_DEG)
+			# 内收轴是掌 +y，正角把拇指从桡侧扫向掌前（掌 -z），
+			# 正好是四指根部握持口袋的方向。
+			var target: float = deg_to_rad(grip * THUMB_ADDUCT_MAX_DEG)
 			var torque: float = _joint_torque("thumb_cmc_adduct", true)
 			joint.set_param(HingeJoint3D.PARAM_MOTOR_MAX_IMPULSE, torque * dt)
 			joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY,
@@ -2157,7 +2156,9 @@ func _build_fingers_on_hand(hand_root: Node3D, h: int, skin) -> void:
 		# 从 CMC 到指尖约等于掌宽（10 cm）的 0.65-0.7；之前 9.9 cm 和
 		# 掌宽一样长，对掌时指尖会甩到掌外 9 cm 才折回，永远够不到
 		# 掌前的握持口袋。
-		var lengths: Array = [0.046, 0.026, 0.020] if f > 0 else [0.030, 0.022, 0.016]
+		# 拇指：掌骨 4.5 + 近节 3.2 + 末节 2.4 = 10.1 cm，接近真人 CMC→指尖。
+		# 原来 3.0/2.2/1.6 太短，指尖够不到四指围出的握持口袋。
+		var lengths: Array = [0.046, 0.026, 0.020] if f > 0 else [0.045, 0.032, 0.024]
 		var pivots: Array = []
 		var parent: Node3D = base
 		for j in range(lengths.size()):
