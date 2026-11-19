@@ -58,7 +58,6 @@ var _grip_assist_engaged: bool = false
 ## 建一个 PinJoint。它是「软皮摩擦已经抓住」的刚性代理，防止手臂被
 ## 躯干搬运时把物品从手里穿过去；松 E 立即释放。长期仍应换成连续
 ## 软皮碰撞，不该靠关节模拟摩擦。
-var _grip_joints: Array = [null, null]
 ## 握持辅助目标角（度）：先让四指弯成钩子，拇指压住，掌心才有
 ## 足够大的皮肉接触面。全部在解剖上限内。
 const FINGER_GRASP_DEG := [70.0, 80.0, 55.0]
@@ -353,7 +352,6 @@ func _physics_process(delta: float) -> void:
 
 	_update_orientation()
 	_update_grip_assist(delta)
-	_update_grip_constraints()
 	_update_hand_physics()
 	_check_hand_ground_contact()
 
@@ -1083,7 +1081,6 @@ func _build_hand_physics() -> void:
 	_finger_broken.clear()
 	_detached_from_torso.clear()
 	_detached_from_palm.clear()
-	_grip_joints = [null, null]
 	_bone_message = ""
 	if _hand_physics_root != null:
 		_hand_physics_root.queue_free()
@@ -2463,40 +2460,6 @@ func _update_grip_assist(delta: float) -> void:
 	if all_done:
 		_grip_assist_engaged = false
 	_apply_finger_pose()
-
-
-## E 握紧后的临时刚性握持约束。只对「已经有指腹接触、且不是冻结状态」
-## 的物品生效；松 E 或换回手动控制时释放。它的作用是保证手臂随躯干
-## 搬运/快速移动时，已经抓住的物品不会从掌心里穿出去。
-func _update_grip_constraints() -> void:
-	for h in range(_grip_joints.size()):
-		var existing: Variant = _grip_joints[h]
-		if not _grip_assist_closed:
-			if existing != null and is_instance_valid(existing):
-				(existing as Node).queue_free()
-			_grip_joints[h] = null
-			continue
-		if existing != null and is_instance_valid(existing):
-			continue
-		if h >= _palm_bodies.size() or h >= _pulp_touch.size():
-			continue
-		var picked: RigidBody3D = null
-		for id in (_pulp_touch[h] as Dictionary).keys():
-			var obj := instance_from_id(int(id))
-			if obj is ItemPhysicsBody and not (obj as RigidBody3D).freeze:
-				picked = obj as RigidBody3D
-				break
-		if picked == null:
-			continue
-		var palm: RigidBody3D = _palm_bodies[h]
-		var pin := PinJoint3D.new()
-		_hand_physics_root.add_child(pin)
-		pin.global_position = (palm.global_position + picked.global_position) * 0.5
-		pin.node_a = pin.get_path_to(palm)
-		pin.node_b = pin.get_path_to(picked)
-		_grip_joints[h] = pin
-		print("[Grip] hand %d attached to item %d" % [
-			h, picked.item.item_id if picked.item != null else -1])
 
 
 func _select_finger(hand: int, finger: int) -> void:

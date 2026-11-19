@@ -51,8 +51,6 @@
 - 拇指控制范围：CMC 80° / MCP 55° / IP 80°，控制层与肌肉层使用
   同一张上限表（`test_thumb_range` 6/6）；轴由 `test_thumb_axes` 验证，
   对掌/屈曲不会互换；皮肉从掌缘 CMC 窝起扫，不再接四指共用的掌中根点；
-- E 握紧且指腹已接触可动物品时，手掌和物品之间建立临时 PinJoint，
-  防止手臂随躯干瞬移时物品穿出手心；松 E 释放；
 - 出生点前方 1.6 m 有一根 `TEST STICK`（Ø4 cm × 1.1 m，约 1.04 kg）：
   先冻结直立，右键按住并碰到/手掌靠近 45 cm 后释放成普通动态木棍，
   用于复现抓取时手部被顶偏；`WorldRenderer.test_stick_enabled` 控制；
@@ -77,7 +75,6 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 & $GODOT --headless --path . scenes/test_geology.tscn        # 27/27
 & $GODOT --headless --path . scenes/test_thumb_range.tscn    # 6/6（拇指控制范围）
 & $GODOT --headless --path . scenes/test_grip_assist.tscn    # 42/42（E 握持）
-& $GODOT --headless --path . scenes/test_grip_constraint.tscn # 3/3（E 握持临时约束）
 ```
 
 GDExtension 任务先运行 `gdextension\build.bat`。
