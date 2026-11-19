@@ -233,6 +233,24 @@ func get_joint_max_torque(joint: String) -> float:
 		torque *= finger_strength_multiplier
 	return torque
 
+
+## 下肢最大等长力矩（N·m）。下肢肌群（臀/股四头/腘绳/小腿三头）
+## 的生理横断面积远大于手部，不能沿用「全身肌力 × 手部力臂」。
+## 这里按成人解剖峰值力矩量级给出基线，再按先天力量/体格缩放；
+## 数值是肌肉能力上限，不是玩法硬编码。
+const LEG_JOINT_MAX_TORQUE := {
+	"hip": 180.0,
+	"hip_roll": 90.0,
+	"knee": 140.0,
+	"ankle": 100.0,
+}
+
+func get_leg_joint_max_torque(joint: String) -> float:
+	var base: float = float(LEG_JOINT_MAX_TORQUE.get(joint, 0.0))
+	var strength_scale: float = clampf(current_strength / 400.0, 0.6, 1.5)
+	var physique_scale: float = clampf(physique, 0.7, 1.3)
+	return base * strength_scale * physique_scale
+
 ## 不主动控制时该关节的支撑力矩 N·m
 func get_joint_passive_torque(joint: String) -> float:
 	return get_joint_max_torque(joint) * PASSIVE_SUPPORT_RATIO

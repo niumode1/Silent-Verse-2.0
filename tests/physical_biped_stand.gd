@@ -170,7 +170,7 @@ func _make_hinge(a: PhysicsBody3D, b: PhysicsBody3D, pos: Vector3,
 	joint.set_flag(HingeJoint3D.FLAG_ENABLE_MOTOR, true)
 	joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY, 0.0)
 	joint.set_param(HingeJoint3D.PARAM_MOTOR_MAX_IMPULSE, 0.0)
-	var torque: float = _player_body.get_joint_max_torque(muscle)
+	var torque: float = _player_body.get_leg_joint_max_torque(muscle)
 	var a_basis: Basis = a.global_transform.basis.orthonormalized()
 	var b_basis: Basis = b.global_transform.basis.orthonormalized()
 	var ref := Vector3.UP
