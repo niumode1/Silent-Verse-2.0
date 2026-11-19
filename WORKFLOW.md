@@ -73,6 +73,7 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 & $GODOT --headless --path . scenes/test_particle_budget.tscn # 16/16
 & $GODOT --headless --path . scenes/test_geology.tscn        # 27/27
 & $GODOT --headless --path . scenes/test_thumb_range.tscn    # 6/6（拇指控制范围）
+& $GODOT --headless --path . scenes/test_grip_assist.tscn    # 42/42（E 握持）
 ```
 
 GDExtension 任务先运行 `gdextension\build.bat`。

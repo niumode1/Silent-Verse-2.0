@@ -402,5 +402,6 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
    才有足够面积贴住木棍；出力仍由肌肉力矩模型计算。
 
 测试：`test_finger_grip` PASS（位移 0.021 m，无骨折日志）、
-`test_thumb_range` 6/6、`test_arm_load` PASS（60 kg 仍会断肘）。
+`test_thumb_range` 6/6、`test_grip_assist` 42/42、
+`test_arm_load` PASS（60 kg 仍会断肘）。
 软皮采样密度提高后每帧射线数约翻倍，下一步可在低端机上测开销。
