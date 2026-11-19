@@ -115,6 +115,10 @@ const BONE_TENSILE_STRENGTH := 130.0e6     # Pa
 const BONE_COMPRESSIVE_STRENGTH := 180.0e6 # Pa
 const BONE_ELASTIC_MODULUS := 17.0e9       # Pa
 
+## 临时平衡：骨骼强度倍率。真实值 1.0；当前抓握测试阶段先调高，
+## 避免拿一根木棍就骨折。玩法平衡定稿后再改回 1.0。
+var bone_strength_multiplier: float = 8.0
+
 ## 各骨段的骨皮质外径/内径 (m)，真实解剖量级
 const BONE_SECTIONS := {
 	"humerus": {"outer": 0.025, "inner": 0.016},     # 肱骨
@@ -238,8 +242,9 @@ func get_bone_fracture_moment(bone: String) -> float:
 	var outer: float = sec["outer"]
 	var inner: float = sec["inner"]
 	var w: float = PI * (pow(outer, 4.0) - pow(inner, 4.0)) / (32.0 * outer)
-	var strength: float = BONE_TENSILE_STRENGTH * (1.0 - 0.15 * clampf(osteoporosis, 0.0, 1.0))
-	return strength * w
+	var strength: float = BONE_TENSILE_STRENGTH \
+		* (1.0 - 0.15 * clampf(osteoporosis, 0.0, 1.0))
+	return strength * w * bone_strength_multiplier
 
 ## 获取当前最大负重 kg（长期携带）
 func get_carry_capacity() -> float:
