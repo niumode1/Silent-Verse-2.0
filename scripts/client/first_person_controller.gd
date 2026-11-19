@@ -611,11 +611,11 @@ func _rebuild_body_skin() -> void:
 				cur.append([_body_root.to_local(wrist_w), 0.034, skin_col])
 			if wrist_broken:
 				pieces.append(cur)
-				cur = [[_body_root.to_local(wrist_palm_w), 0.024, skin_col, 0.7]]
-			# 掌段沿手掌法线压扁：宽度保持，厚度收到约 1/3，
-			# 是原来的连续皮肉变扁，不是额外插一块板
-			cur.append([_body_root.to_local(palm_w), 0.026, skin_col, 0.35])
-			cur.append([_body_root.to_local(knuckle_w), 0.022, skin_col, 0.5])
+				cur = [[_body_root.to_local(wrist_palm_w), 0.045, skin_col, 0.35]]
+			# 掌段沿手掌法线压扁：半径取掌宽的一半（~5 cm），
+			# 厚度只压到 0.18 倍（≈1.6 cm），所以是变扁不是变细
+			cur.append([_body_root.to_local(palm_w), 0.050, skin_col, 0.18])
+			cur.append([_body_root.to_local(knuckle_w), 0.045, skin_col, 0.22])
 			pieces.append(cur)
 			for piece in pieces:
 				_skin_chain(piece, palm_normal_local)
@@ -634,9 +634,9 @@ func _rebuild_body_skin() -> void:
 				[_body_root.to_local(elbow.global_position), 0.048, skin_col],
 				[_body_root.to_local(wrist.global_position), 0.034, skin_col],
 				[_body_root.to_local(hand.global_transform * Vector3(0.0, 0.0, -0.02)),
-					0.045, skin_col, 0.35],
+					0.050, skin_col, 0.18],
 				[_body_root.to_local(hand.global_transform * Vector3(0.0, 0.0, -0.06)),
-					0.04, skin_col, 0.5],
+					0.045, skin_col, 0.22],
 			], hand_normal_local)
 
 	# 手指：真物理指骨是刚体，位姿每帧由物理决定；皮肉同样沿整根
