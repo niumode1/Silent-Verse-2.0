@@ -32,6 +32,8 @@ var _frames := 0
 var _failed := false
 var _max_abs_y := 0.0
 var _min_y := INF
+var _prev_com := Vector3.ZERO
+var _com_vel := Vector3.ZERO
 
 
 func _ready() -> void:
@@ -130,6 +132,10 @@ func _build_leg(side: float) -> void:
 		0.05, Vector3(0.04, 0.04, 0.04), Vector3(x, HIP_Y, 0.0))
 	hip_roll_body.gravity_scale = 0.0
 	hip_roll_body.collision_mask = 0
+	# 过渡体只做约束载体；Jolt 的铰链马达冲量会按另一端惯量缩放，
+	# 惯量太小马达就使不上力（拇指 CMC 也遇到过同样问题）。
+	hip_roll_body.mass = 0.10
+	hip_roll_body.inertia = Vector3(0.01, 0.01, 0.01)
 
 	var hip_roll := _make_hinge(_torso, hip_roll_body, Vector3(x, HIP_Y, 0.0),
 		Vector3.BACK, "hip_roll", deg_to_rad(-35.0), deg_to_rad(35.0))
@@ -172,6 +178,7 @@ func _make_hinge(a: PhysicsBody3D, b: PhysicsBody3D, pos: Vector3,
 		ref = Vector3.RIGHT
 	_joints.append({
 		"joint": joint, "torque": torque, "muscle": muscle,
+		"motor_sign": 1.0,
 		"a": a, "b": b,
 		"axis_local_a": (a_basis.inverse() * axis).normalized(),
 		"ref_local_a": (a_basis.inverse() * ref).normalized(),
@@ -183,6 +190,15 @@ func _make_hinge(a: PhysicsBody3D, b: PhysicsBody3D, pos: Vector3,
 func _physics_process(_delta: float) -> void:
 	_frames += 1
 	var dt := get_physics_process_delta_time()
+	var com := _compute_com()
+	if _frames > 1 and dt > 0.0:
+		_com_vel = (com - _prev_com) / dt
+	_prev_com = com
+	var cop := _compute_cop()
+	if _frames % 30 == 0:
+		print("  f%d COM=(%.3f, %.3f, %.3f) CoP=(%.3f, %.3f, %.3f) v=(%.2f, %.2f)" % [
+			_frames, com.x, com.y, com.z, cop.x, cop.y, cop.z,
+			_com_vel.x, _com_vel.z])
 	# 站立保持：关节马达把角度拉回 0°。力矩仍来自 PlayerBody 的
 	# 肌力 × 解剖力臂，不在场景里写死。
 	var pitch := 0.0
@@ -191,8 +207,18 @@ func _physics_process(_delta: float) -> void:
 		var up: Vector3 = _torso.global_transform.basis.y.normalized()
 		pitch = atan2(up.z, up.y)
 		pitch_rate = _torso.angular_velocity.x
-	var hip_balance := clampf(-pitch * 1.2 - pitch_rate * 0.25, -0.8, 0.8)
-	var ankle_balance := clampf(pitch * 1.8 + pitch_rate * 0.35, -0.5, 0.5)
+	var h_capture: float = sqrt(maxf(com.y, 0.1) / 9.81)
+	var desired_cop_z: float = com.z + _com_vel.z * h_capture
+	var err_z: float = desired_cop_z - cop.z
+	var desired_cop_x: float = com.x + _com_vel.x * h_capture
+	var err_x: float = desired_cop_x - cop.x
+	var ankle_balance: float = clampf(err_z * 2.0, -0.5, 0.5)
+	var hip_balance: float = clampf(-err_z * 1.2, -0.4, 0.4)
+	var roll_balance: float = clampf(err_x * 1.5, -0.35, 0.35)
+	if _frames % 30 == 0:
+		print("  f%d balance err_x=%.3f err_z=%.3f roll=%.1f° ankle=%.1f°" % [
+			_frames, err_x, err_z, rad_to_deg(roll_balance),
+			rad_to_deg(ankle_balance)])
 	for entry in _joints:
 		var joint: HingeJoint3D = entry["joint"]
 		var a: Node3D = entry["a"]
@@ -208,10 +234,13 @@ func _physics_process(_delta: float) -> void:
 		match String(entry["muscle"]):
 			"hip":
 				target = hip_balance
+			"hip_roll":
+				target = roll_balance
 			"ankle":
 				target = ankle_balance
+		var motor_sign: float = float(entry["motor_sign"])
 		joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY,
-			clampf((angle - target) * 8.0, -6.0, 6.0))
+			clampf((angle - target) * 8.0 * motor_sign, -6.0, 6.0))
 		joint.set_param(HingeJoint3D.PARAM_MOTOR_MAX_IMPULSE, torque * dt)
 		if _frames % 60 == 0:
 			print("  f%d %s angle=%.1f° torque=%.0f" % [
@@ -233,6 +262,43 @@ func _physics_process(_delta: float) -> void:
 	if _frames >= FRAMES:
 		_report()
 		get_tree().quit(0)
+
+
+func _compute_com() -> Vector3:
+	var total := 0.0
+	var weighted := Vector3.ZERO
+	var parts: Array = [_torso]
+	for leg in _legs:
+		parts.append(leg["thigh"])
+		parts.append(leg["shin"])
+		parts.append(leg["foot"])
+	for body in parts:
+		if body == null:
+			continue
+		var rb: RigidBody3D = body
+		total += rb.mass
+		weighted += rb.global_position * rb.mass
+	if total <= 0.0:
+		return Vector3.ZERO
+	return weighted / total
+
+
+func _compute_cop() -> Vector3:
+	var total := 0.0
+	var weighted := Vector3.ZERO
+	for leg in _legs:
+		var foot: ContactForceProbe = leg["foot"]
+		var f: float = foot.contact_force.length()
+		if f > 0.1:
+			# ContactForceProbe.contact_point 是脚局部坐标。
+			weighted += (foot.global_transform * foot.contact_point) * f
+			total += f
+		else:
+			weighted += foot.global_position
+			total += 1.0
+	if total <= 0.0:
+		return Vector3.ZERO
+	return weighted / total
 
 
 func _report() -> void:
