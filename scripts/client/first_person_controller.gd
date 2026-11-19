@@ -20,6 +20,23 @@ const ContactForceProbeScript = preload("res://scripts/client/contact_force_prob
 @export var crouch_height: float = 0.9
 @export var planet_radius: float = 3978.87
 
+@export_group("Hand Shape")
+## 拇指根在手掌局部系的位置（x 会乘左右手符号）
+@export var thumb_base_local: Vector3 = Vector3(0.054, -0.013, 0.008)
+## 拇指掌骨 / 近节 / 末节长度（m）
+@export var thumb_seg_lengths: Array[float] = [0.045, 0.032, 0.024]
+## 四指近节 / 中节 / 末节长度（m）
+@export var finger_seg_lengths: Array[float] = [0.046, 0.026, 0.020]
+## 拇指 CMC 内收最大角度（对掌）
+@export_range(0.0, 120.0) var thumb_adduct_max_deg: float = 70.0
+## 掌盒厚度（m）
+@export_range(0.008, 0.05) var palm_thickness: float = 0.016
+
+@export_group("Body Shape")
+@export var torso_hip_radius: float = 0.145
+@export var torso_waist_radius: float = 0.130
+@export var torso_chest_radius: float = 0.155
+
 ## 地形引用；有它时按真实地表高度行走，否则退回平均球面
 var terrain: Terrain = null
 
@@ -548,11 +565,11 @@ func _rebuild_body_skin() -> void:
 	# 躯干：骨盆 → 腰 → 胸廓 → 颈根
 	# 肚子收薄，第一人称低头时能看到腿
 	_skin_chain([
-		[Vector3(0.0, 0.80, 0.02), 0.145, pants_col],
-		[Vector3(0.0, 0.90, 0.01), 0.135, pants_col],
-		[Vector3(0.0, 0.98, 0.0), 0.130, shirt_col],
-		[Vector3(0.0, 1.12, -0.02), 0.155, shirt_col],
-		[Vector3(0.0, 1.25, 0.01), 0.135, shirt_col],
+		[Vector3(0.0, 0.80, 0.02), torso_hip_radius, pants_col],
+		[Vector3(0.0, 0.90, 0.01), (torso_hip_radius + torso_waist_radius) * 0.5, pants_col],
+		[Vector3(0.0, 0.98, 0.0), torso_waist_radius, shirt_col],
+		[Vector3(0.0, 1.12, -0.02), torso_chest_radius, shirt_col],
+		[Vector3(0.0, 1.25, 0.01), (torso_chest_radius + 0.07) * 0.5, shirt_col],
 		[Vector3(0.0, 1.31, 0.05), 0.07, shirt_col],
 	])
 
@@ -1141,7 +1158,7 @@ func _build_arm_rig(h: int) -> RigidBody3D:
 	# 掌厚 1.6 cm（掌心面 y=-0.008）。真实掌骨部约 2.2 cm，但掌盒越厚，
 	# 合拢后的指骨到掌面就越挤；薄一档，四指和拇指才有空间把粗树枝
 	# 包进掌心，而不是被掌盒顶着只能夹在掌外。
-	palm_shape.size = Vector3(0.10, 0.016, 0.11)
+	palm_shape.size = Vector3(0.10, palm_thickness, 0.11)
 	palm_col.shape = palm_shape
 	palm.add_child(palm_col)
 	_hand_physics_root.add_child(palm)
@@ -1758,7 +1775,7 @@ func _update_finger_muscles(h: int, palm: RigidBody3D, fore: RigidBody3D,
 					grip = maxf(grip, clampf(float(angs[j]) / lim, 0.0, 1.0))
 			# 内收轴是掌 +y，正角把拇指从桡侧扫向掌前（掌 -z），
 			# 正好是四指根部握持口袋的方向。
-			var target: float = deg_to_rad(grip * THUMB_ADDUCT_MAX_DEG)
+			var target: float = deg_to_rad(grip * thumb_adduct_max_deg)
 			var torque: float = _joint_torque("thumb_cmc_adduct", true)
 			joint.set_param(HingeJoint3D.PARAM_MOTOR_MAX_IMPULSE, torque * dt)
 			joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY,
@@ -2130,7 +2147,8 @@ func _build_fingers_on_hand(hand_root: Node3D, h: int, skin) -> void:
 			# z=+0.008：CMC 退到掌的近端（腕侧），离四指指根（z=-0.055）
 			# 拉开 6 cm。握口因此变大——拇指和四指像两把钳口，能把正常
 			# 粗细（Ø3.5-5 cm）的树枝夹在中间，而不是被四指指根挤出去。
-			base.position = Vector3(0.054 * inner, -0.013, 0.008)
+			base.position = Vector3(thumb_base_local.x * inner,
+				thumb_base_local.y, thumb_base_local.z)
 			# 拇指**横着长**：基准生长方向垂直于四指（四指沿 -z 长，
 			# 拇指沿 ±x 长），再靠 CMC 内收扫向前方（见
 			# [_build_fingers_for_hand] 的 CMC 过渡体）。屈曲轴取掌 z，
@@ -2161,7 +2179,8 @@ func _build_fingers_on_hand(hand_root: Node3D, h: int, skin) -> void:
 		# 掌前的握持口袋。
 		# 拇指：掌骨 4.5 + 近节 3.2 + 末节 2.4 = 10.1 cm，接近真人 CMC→指尖。
 		# 原来 3.0/2.2/1.6 太短，指尖够不到四指围出的握持口袋。
-		var lengths: Array = [0.046, 0.026, 0.020] if f > 0 else [0.045, 0.032, 0.024]
+		var lengths: Array = finger_seg_lengths if f > 0 \
+			else [thumb_seg_lengths[0], thumb_seg_lengths[1], thumb_seg_lengths[2]]
 		var pivots: Array = []
 		var parent: Node3D = base
 		for j in range(lengths.size()):
