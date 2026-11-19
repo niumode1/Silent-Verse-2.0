@@ -652,7 +652,19 @@ func _rebuild_body_skin() -> void:
 				var segs: Array = _finger_segments[h][f]
 				if segs.is_empty():
 					continue
-				var ctrl: Array = [[knuckle_l, 0.011, skin_col]]
+				var ctrl: Array
+				if f == 0:
+					# 拇指不能接到四指共用的掌指根点：那个点在掌中段
+					# （z=-0.05），离拇指 CMC（x=±0.054, z=0.008）有 8 cm。
+					# 接过去会让拇指看起来从四指根部斜着长出来，CMC 的
+					# 实际位置和转动中心被这截假根节盖住，后两个关节的
+					# 活动范围也就跟着看着不对。从掌缘的 CMC 窝起扫。
+					var inner: float = 1.0 if h == 0 else -1.0
+					var cmc_in_palm := palm_body.global_transform * Vector3(
+						0.045 * inner, -0.008, 0.008)
+					ctrl = [[_body_root.to_local(cmc_in_palm), 0.011, skin_col]]
+				else:
+					ctrl = [[knuckle_l, 0.011, skin_col]]
 				for j in range(segs.size()):
 					var seg: RigidBody3D = segs[j]
 					var seg_len: float = float(_finger_seg_lengths[h][f][j])
@@ -943,7 +955,10 @@ const FINGER_JOINT_LIMITS_DEG := [90.0, 100.0, 70.0]
 ## 关键——少了它，拇指从腕根到指尖只有 5.4 cm，够不到四指围出的握持
 ## 口袋（离腕根 5.5-7.8 cm）。真人拇指从 CMC 到指尖约 10 cm，其中掌骨
 ## 占 4-5 cm。
-const THUMB_JOINT_LIMITS_DEG := [80.0, 90.0, 80.0]
+## 拇指 MCP 的生理屈曲只有约 50-60°（掌指关节的骨性止挡比近节指骨短），
+## 不能沿用四指的 90-100°；否则切到第二个关节时，它相对上一节能卷出
+## 一个比 CMC 还大的角，整根拇指折进掌心。IP 约 80°，保留。
+const THUMB_JOINT_LIMITS_DEG := [80.0, 55.0, 80.0]
 ## 拇指 CMC 内收（对掌）的最大角度。内收轴是掌 y，只能把这根拇指
 ## 在水平面里从 −x 摆到 ±z：45° 只到掌前，够不到对侧；要横跨到四指
 ## 根部得转过 ~110°。但实测这两种幅度都会在合拢时贴着木棍高度横扫，
@@ -2255,8 +2270,14 @@ func _adjust_selected_joint(delta_deg: float) -> void:
 				var angles: Array = _finger_angles[h][f]
 				# 不同手指关节数不同（拇指三节、四指三节），选中号可能越界
 				var sel: int = mini(_selected_joint, angles.size() - 1)
+				# 每个关节的可用范围必须和 [_update_finger_muscles] 里
+				# 实际下达的目标角夹紧一致，否则 HUD 能转到 95°、关节
+				# 却在 55°/80° 就停住，看起来就像远端关节的范围坏了。
+				var limits: Array = THUMB_JOINT_LIMITS_DEG if f == 0 \
+					else FINGER_JOINT_LIMITS_DEG
+				var hi: float = float(limits[sel])
 				angles[sel] = clampf(
-					float(angles[sel]) + delta_deg, -15.0, 95.0)
+					float(angles[sel]) + delta_deg, -15.0, hi)
 				# 主动发力窗口：期间肌肉出满力，之后退回静力支撑
 				if _finger_active_until.size() > h and _finger_active_until[h].size() > f:
 					_finger_active_until[h][f][sel] = active_until

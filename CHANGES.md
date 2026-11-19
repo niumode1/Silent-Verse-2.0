@@ -309,3 +309,28 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 最近提交：`3f731d3` 客户端施力；`a51568d` M1；`c14f6e2` M2；
 `affe47b` M2b；`3815ad4` M4；`3ae3670` M3 LOD patch；
 `e790600` M3 部分移除；当前文档提交见 `git log`。
+
+## 11. 2026-11-19 拇指控制范围与皮肉根节
+
+文件：[scripts/client/first_person_controller.gd](scripts/client/first_person_controller.gd)
+
+用户报告：默认控制的拇指关节方向正确，但切到后两个关节（MCP/IP）时，
+它们相对前一节的活动范围不对。
+
+排查结果：物理铰链的轴和符号本身是对的（`test_thumb_axes` 双手 10/10），
+问题出在三个叠加处：
+
+1. **皮肉根节接错**：拇指的皮肉管和四指共用 `knuckle_l`（掌中段
+   `z=-0.05`），离拇指 CMC（`x=±0.054, z=0.008`）约 8 cm。拇指看起来
+   从四指根部斜着长出来，CMC 的实际转动中心被这截假根节盖住。现在
+   拇指单独从掌缘 CMC 窝（`0.045·inner, -0.008, 0.008`）起扫；
+2. **关节上限错误**：`THUMB_JOINT_LIMITS_DEG` 从 `[80, 90, 80]` 改为
+   `[80, 55, 80]`。拇指 MCP 的生理屈曲只有约 50-60°，90° 会让第二个
+   关节相对上一节卷出比 CMC 还大的角，整根拇指折进掌心；
+3. **控制层夹紧不一致**：`_adjust_selected_joint` 原来统一夹到
+   `[-15, 95]`，而肌肉层实际按关节上限夹紧，HUD 能转到 95°、关节却在
+   55°/80° 停住。现在控制层按 `THUMB_JOINT_LIMITS_DEG` /
+   `FINGER_JOINT_LIMITS_DEG` 逐关节夹紧。
+
+新增测试 `test_thumb_range`：控制层三个上限 + 冻结手掌后逐个关节实际
+达到相对屈曲上限，6/6。`test_finger_grip` 在该改动后仍 PASS。

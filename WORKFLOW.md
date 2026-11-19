@@ -41,8 +41,11 @@
 
 - `primary_action`（左键）用玩家身体力量对前方地面施力；
 - 手掌接触 `TerrainBody`/`GroundCollision` >50 N 时自动对真实接触点施力；
-- 抓握辅助（右键按住）：拇指按「CMC 对掌(Y) → CMC 屈曲(Z) → MCP/IP(X)」
-  顺序收拢；轴由 `test_thumb_axes` 验证，对掌/屈曲不会互换；
+- 手指控制：右键按住上下拖动调选中关节；`` ` `` 键循环 proxim/mid/dist；
+  1-5 / 6-0 选择左右手手指；滚轮调手臂关节；
+- 拇指控制范围：CMC 80° / MCP 55° / IP 80°，控制层与肌肉层使用
+  同一张上限表（`test_thumb_range` 6/6）；轴由 `test_thumb_axes` 验证，
+  对掌/屈曲不会互换；皮肉从掌缘 CMC 窝起扫，不再接四指共用的掌中根点；
 - 土 → C++ DEM 粒子（最多 1200 个，MultiMesh 凸碎片模板）；
 - 岩石 → `FractureGenerator` 破裂成独立 `ItemEntity`；
 - DEM 粒子有局部地面平面；静止粒子每 2 s 合并回 `MatterDelta`；
@@ -62,6 +65,7 @@ $GODOT = "I:\godot\Godot_v4.7.2-stable_win64.exe"
 & $GODOT --headless --path . scenes/test_soil_particles.tscn # 10/10
 & $GODOT --headless --path . scenes/test_particle_budget.tscn # 16/16
 & $GODOT --headless --path . scenes/test_geology.tscn        # 27/27
+& $GODOT --headless --path . scenes/test_thumb_range.tscn    # 6/6（拇指控制范围）
 ```
 
 GDExtension 任务先运行 `gdextension\build.bat`。
